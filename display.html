@@ -7,7 +7,8 @@
     <style>
         body {
             font-family: Arial, sans-serif;
-            font-size: 48px;
+            font-size: var(--text-size, 48px);
+            font-weight: bold;
             background-color: #ffffff;
             color: #000000;
             margin: 0;
@@ -23,21 +24,68 @@
             padding: 40px;
             margin: 30px 0;
             box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+            font-weight: bold;
         }
         
         .timestamp {
-            font-size: 24px;
+            font-size: calc(var(--text-size, 48px) * 0.5);
             color: #666666;
             margin-top: 20px;
+            font-weight: bold;
         }
         
         .no-messages {
             color: #888888;
             font-style: italic;
+            font-weight: bold;
+        }
+        
+        .controls {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            display: flex;
+            gap: 10px;
+            background-color: rgba(255,255,255,0.9);
+            padding: 15px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.2);
+        }
+        
+        .control-btn {
+            background-color: #4169e1;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: bold;
+        }
+        
+        .control-btn:hover {
+            background-color: #3458d1;
+        }
+        
+        .size-display {
+            background-color: #f8f9fa;
+            color: #333;
+            border: 2px solid #ddd;
+            padding: 8px 12px;
+            border-radius: 5px;
+            font-size: 14px;
+            font-weight: bold;
         }
     </style>
 </head>
 <body>
+    <div class="controls">
+        <button class="control-btn" onclick="changeTextSize(-4)">A-</button>
+        <div class="size-display" id="sizeDisplay">48px</div>
+        <button class="control-btn" onclick="changeTextSize(4)">A+</button>
+        <button class="control-btn" onclick="toggleFullscreen()">⛶</button>
+    </div>
+    
     <div id="messages">
         <div class="no-messages">Loading messages...</div>
     </div>
@@ -58,7 +106,6 @@
                 container.innerHTML = messages.map(msg => `
                     <div class="message">
                         ${msg.text}
-                        <div class="timestamp">Added: ${new Date(msg.timestamp).toLocaleDateString()}</div>
                     </div>
                 `).join('');
                 
@@ -73,6 +120,48 @@
         
         // Refresh messages every 30 seconds
         setInterval(loadMessages, 30000);
+        
+        // Text size control
+        let currentSize = 48;
+        
+        function changeTextSize(delta) {
+            currentSize = Math.max(24, Math.min(96, currentSize + delta));
+            document.documentElement.style.setProperty('--text-size', currentSize + 'px');
+            document.getElementById('sizeDisplay').textContent = currentSize + 'px';
+            localStorage.setItem('textSize', currentSize);
+        }
+        
+        // Load saved text size
+        const savedSize = localStorage.getItem('textSize');
+        if (savedSize) {
+            currentSize = parseInt(savedSize);
+            document.documentElement.style.setProperty('--text-size', currentSize + 'px');
+            document.getElementById('sizeDisplay').textContent = currentSize + 'px';
+        }
+        
+        // Fullscreen toggle
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen();
+            } else {
+                document.exitFullscreen();
+            }
+        }
+        
+        // Hide controls after 3 seconds of no mouse movement
+        let controlsTimeout;
+        const controls = document.querySelector('.controls');
+        
+        function showControls() {
+            controls.style.opacity = '1';
+            clearTimeout(controlsTimeout);
+            controlsTimeout = setTimeout(() => {
+                controls.style.opacity = '0.3';
+            }, 3000);
+        }
+        
+        document.addEventListener('mousemove', showControls);
+        showControls();
     </script>
 </body>
 </html>
