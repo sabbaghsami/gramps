@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reminders</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            font-size: 48px;
+            background-color: #ffffff;
+            color: #000000;
+            margin: 0;
+            padding: 40px;
+            line-height: 1.5;
+            text-align: center;
+        }
+        
+        .message {
+            background-color: #f0f8ff;
+            border: 3px solid #4169e1;
+            border-radius: 20px;
+            padding: 40px;
+            margin: 30px 0;
+            box-shadow: 0 8px 16px rgba(0,0,0,0.1);
+        }
+        
+        .timestamp {
+            font-size: 24px;
+            color: #666666;
+            margin-top: 20px;
+        }
+        
+        .no-messages {
+            color: #888888;
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+    <div id="messages">
+        <div class="no-messages">Loading messages...</div>
+    </div>
+
+    <script>
+        async function loadMessages() {
+            try {
+                const response = await fetch('/api/messages');
+                const messages = await response.json();
+                
+                const container = document.getElementById('messages');
+                
+                if (messages.length === 0) {
+                    container.innerHTML = '<div class="no-messages">No messages yet</div>';
+                    return;
+                }
+                
+                container.innerHTML = messages.map(msg => `
+                    <div class="message">
+                        ${msg.text}
+                        <div class="timestamp">Added: ${new Date(msg.timestamp).toLocaleDateString()}</div>
+                    </div>
+                `).join('');
+                
+            } catch (error) {
+                document.getElementById('messages').innerHTML = 
+                    '<div class="no-messages">Could not load messages</div>';
+            }
+        }
+        
+        // Load messages on page load
+        loadMessages();
+        
+        // Refresh messages every 30 seconds
+        setInterval(loadMessages, 30000);
+    </script>
+</body>
+</html>
