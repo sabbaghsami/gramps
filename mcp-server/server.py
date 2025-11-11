@@ -134,7 +134,7 @@ if __name__ == "__main__":
         # Run as HTTP server for ChatGPT Desktop connector or Railway
         port = int(port_env or 8000)
         logger.info(f"Running in HTTP/SSE mode on port {port}")
-        mcp.run(transport="sse", port=port)
+        mcp.run(transport="sse", host="0.0.0.0", port=port)
     else:
         # Run as stdio server (default for local development)
         logger.info(f"Running in stdio mode")
