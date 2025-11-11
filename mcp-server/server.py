@@ -125,14 +125,17 @@ if __name__ == "__main__":
     logger.info(f"API Endpoint: {API_ENDPOINT}")
 
     # Check if we should run as HTTP server (for ChatGPT Desktop)
-    # or stdio (for command line testing)
+    # Auto-detect if running on Railway (PORT env var is set)
+    # or if --http flag is passed
     import sys
-    if "--http" in sys.argv or "-h" in sys.argv:
-        # Run as HTTP server for ChatGPT Desktop connector
-        port = int(os.environ.get("PORT", 8000))
+    port_env = os.environ.get("PORT")
+
+    if port_env or "--http" in sys.argv or "-h" in sys.argv:
+        # Run as HTTP server for ChatGPT Desktop connector or Railway
+        port = int(port_env or 8000)
         logger.info(f"Running in HTTP/SSE mode on port {port}")
         mcp.run(transport="sse", port=port)
     else:
-        # Run as stdio server (default)
+        # Run as stdio server (default for local development)
         logger.info(f"Running in stdio mode")
         mcp.run()
