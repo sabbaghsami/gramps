@@ -7,6 +7,7 @@ import random
 import string
 import traceback
 from datetime import datetime
+from openai import OpenAI
 
 from config import Config
 from database import get_database
@@ -28,6 +29,7 @@ class ReminderApp:
         self.app.add_url_rule('/api/messages', 'get_messages', self.get_messages, methods=['GET'])
         self.app.add_url_rule('/api/messages', 'add_message', self.add_message, methods=['POST'])
         self.app.add_url_rule('/api/messages/<message_id>', 'delete_message', self.delete_message, methods=['DELETE'])
+        self.app.add_url_rule('/api/translate', 'translate', self.translate, methods=['POST'])
 
     @staticmethod
     def generate_id() -> str:
@@ -88,6 +90,52 @@ class ReminderApp:
         except Exception as e:
             print(f"Error in delete_message: {e}")
             return jsonify({'error': 'Failed to delete message'}), 500
+
+    def translate(self):
+        """POST /api/translate - Translate text using OpenAI API."""
+        try:
+            data = request.get_json()
+            text = data.get('text', '').strip()
+            target_language = data.get('target_language', '').strip()
+
+            if not text:
+                return jsonify({'error': 'Text is required'}), 400
+
+            if not target_language:
+                return jsonify({'error': 'Target language is required'}), 400
+
+            if not Config.OPENAI_API_KEY:
+                return jsonify({'error': 'OpenAI API key not configured'}), 500
+
+            # Initialize OpenAI client
+            client = OpenAI(api_key=Config.OPENAI_API_KEY)
+
+            # Create translation prompt
+            prompt = f"Translate the following text to {target_language}. Only provide the translation, no explanations:\n\n{text}"
+
+            # Call OpenAI API
+            response = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are a professional translator. Provide only the translation without any additional text or explanations."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.3,
+                max_tokens=500
+            )
+
+            translated_text = response.choices[0].message.content.strip()
+
+            return jsonify({
+                'translated_text': translated_text,
+                'original_text': text,
+                'target_language': target_language
+            }), 200
+
+        except Exception as e:
+            print(f"Error in translate: {e}")
+            traceback.print_exc()
+            return jsonify({'error': f'Translation failed: {str(e)}'}), 500
 
     def run(self) -> None:
         """Start the Flask development server."""

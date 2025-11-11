@@ -2,6 +2,10 @@
 Configuration settings and constants for the application.
 """
 import os
+from dotenv import load_dotenv
+
+# Load environment variables from .env file
+load_dotenv()
 
 
 class Config:
@@ -15,6 +19,9 @@ class Config:
     # Database settings
     DATABASE_URL = os.environ.get('DATABASE_URL')
     JSON_DATA_FILE = 'messages.json'
+
+    # OpenAI settings
+    OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
 
     # Database table and column names
     TABLE_NAME = 'messages'

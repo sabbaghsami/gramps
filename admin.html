@@ -175,10 +175,31 @@
         <h1>📝 Manage Grandad's Reminders</h1>
         
         <div class="form-group">
-            <label for="messageText">Add New Message:</label>
+            <label for="messageText">Original Message:</label>
             <textarea id="messageText" placeholder="Type a message for grandad here..."></textarea>
         </div>
-        
+
+        <div class="form-group">
+            <label for="targetLanguage">Translate to:</label>
+            <select id="targetLanguage" style="width: 100%; padding: 12px; border: 2px solid #e1e5e9; border-radius: 10px; font-size: 16px; transition: border-color 0.3s ease;">
+                <option value="Levantine Arabic">Levantine Arabic (اللهجة الشامية)</option>
+                <option value="Modern Standard Arabic">Modern Standard Arabic (العربية الفصحى)</option>
+                <option value="Egyptian Arabic">Egyptian Arabic (اللهجة المصرية)</option>
+                <option value="Gulf Arabic">Gulf Arabic (اللهجة الخليجية)</option>
+                <option value="French">French</option>
+                <option value="Spanish">Spanish</option>
+            </select>
+        </div>
+
+        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 20px;">
+            <button onclick="translateMessage()">🌐 Translate</button>
+        </div>
+
+        <div class="form-group" id="translationGroup" style="display: none;">
+            <label for="translatedText">Translated Message (Editable):</label>
+            <textarea id="translatedText" placeholder="Translation will appear here..."></textarea>
+        </div>
+
         <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px;">
             <button onclick="addMessage()">📝 Add Message</button>
             <button onclick="loadMessages()">🔄 Refresh</button>
@@ -196,13 +217,54 @@
     </div>
 
     <script>
-        async function addMessage() {
+        async function translateMessage() {
             const text = document.getElementById('messageText').value.trim();
+            const targetLanguage = document.getElementById('targetLanguage').value;
+
+            if (!text) {
+                showStatus('Please enter a message to translate', 'error');
+                return;
+            }
+
+            showStatus('Translating...', 'success');
+
+            try {
+                const response = await fetch('/api/translate', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        text: text,
+                        target_language: targetLanguage
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    document.getElementById('translatedText').value = data.translated_text;
+                    document.getElementById('translationGroup').style.display = 'block';
+                    showStatus('Translation complete! You can edit it before adding.', 'success');
+                } else {
+                    showStatus('Translation failed: ' + (data.error || 'Unknown error'), 'error');
+                }
+            } catch (error) {
+                showStatus('Error: Could not translate message', 'error');
+            }
+        }
+
+        async function addMessage() {
+            // Check if there's a translated message, use it; otherwise use original
+            const translatedText = document.getElementById('translatedText').value.trim();
+            const originalText = document.getElementById('messageText').value.trim();
+            const text = translatedText || originalText;
+
             if (!text) {
                 showStatus('Please enter a message', 'error');
                 return;
             }
-            
+
             try {
                 const response = await fetch('/api/messages', {
                     method: 'POST',
@@ -211,9 +273,11 @@
                     },
                     body: JSON.stringify({ text })
                 });
-                
+
                 if (response.ok) {
                     document.getElementById('messageText').value = '';
+                    document.getElementById('translatedText').value = '';
+                    document.getElementById('translationGroup').style.display = 'none';
                     showStatus('Message added successfully!', 'success');
                     loadMessages();
                 } else {
