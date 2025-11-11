@@ -64,7 +64,8 @@ class PostgresDatabase(DatabaseInterface):
                         CREATE TABLE IF NOT EXISTS {Config.TABLE_NAME} (
                             {Config.COLUMN_ID} VARCHAR(50) PRIMARY KEY,
                             {Config.COLUMN_TEXT} TEXT NOT NULL,
-                            {Config.COLUMN_TIMESTAMP} TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
+                            {Config.COLUMN_TIMESTAMP} TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+                            {Config.COLUMN_EXPIRY_TIME} TIMESTAMP WITH TIME ZONE
                         )
                     ''')
                     conn.commit()
@@ -74,20 +75,23 @@ class PostgresDatabase(DatabaseInterface):
             traceback.print_exc()
 
     def get_all_messages(self) -> List[Message]:
-        """Retrieve all messages ordered by timestamp descending."""
+        """Retrieve all non-expired messages ordered by timestamp descending."""
         try:
             with self._get_connection() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
-                        f'SELECT {Config.COLUMN_ID}, {Config.COLUMN_TEXT}, {Config.COLUMN_TIMESTAMP} '
-                        f'FROM {Config.TABLE_NAME} ORDER BY {Config.COLUMN_TIMESTAMP} DESC'
+                        f'SELECT {Config.COLUMN_ID}, {Config.COLUMN_TEXT}, {Config.COLUMN_TIMESTAMP}, {Config.COLUMN_EXPIRY_TIME} '
+                        f'FROM {Config.TABLE_NAME} '
+                        f'WHERE {Config.COLUMN_EXPIRY_TIME} IS NULL OR {Config.COLUMN_EXPIRY_TIME} > NOW() '
+                        f'ORDER BY {Config.COLUMN_TIMESTAMP} DESC'
                     )
                     rows = cur.fetchall()
                     return [
                         Message(
                             id=row[Config.COLUMN_ID],
                             text=row[Config.COLUMN_TEXT],
-                            timestamp=row[Config.COLUMN_TIMESTAMP].isoformat().replace('+00:00', 'Z')
+                            timestamp=row[Config.COLUMN_TIMESTAMP].isoformat().replace('+00:00', 'Z'),
+                            expiry_time=row[Config.COLUMN_EXPIRY_TIME].isoformat().replace('+00:00', 'Z') if row[Config.COLUMN_EXPIRY_TIME] else None
                         )
                         for row in rows
                     ]
@@ -101,9 +105,9 @@ class PostgresDatabase(DatabaseInterface):
             with self._get_connection() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
-                        f'INSERT INTO {Config.TABLE_NAME} ({Config.COLUMN_ID}, {Config.COLUMN_TEXT}, {Config.COLUMN_TIMESTAMP}) '
-                        f'VALUES (%s, %s, %s)',
-                        (message.id, message.text, message.timestamp)
+                        f'INSERT INTO {Config.TABLE_NAME} ({Config.COLUMN_ID}, {Config.COLUMN_TEXT}, {Config.COLUMN_TIMESTAMP}, {Config.COLUMN_EXPIRY_TIME}) '
+                        f'VALUES (%s, %s, %s, %s)',
+                        (message.id, message.text, message.timestamp, message.expiry_time)
                     )
                     conn.commit()
         except Exception as e:
@@ -160,9 +164,11 @@ class JSONDatabase(DatabaseInterface):
             raise
 
     def get_all_messages(self) -> List[Message]:
-        """Retrieve all messages from JSON file."""
+        """Retrieve all non-expired messages from JSON file."""
         data = self._load_messages()
-        return [Message.from_dict(msg) for msg in data]
+        messages = [Message.from_dict(msg) for msg in data]
+        # Filter out expired messages
+        return [msg for msg in messages if not msg.is_expired()]
 
     def add_message(self, message: Message) -> None:
         """Add a message to the JSON file."""
