@@ -56,10 +56,11 @@ class PostgresDatabase(DatabaseInterface):
         return self.psycopg.connect(Config.DATABASE_URL, row_factory=self.dict_row)
 
     def initialize(self) -> None:
-        """Create the messages table if it doesn't exist."""
+        """Create the messages table if it doesn't exist and run migrations."""
         try:
             with self._get_connection() as conn:
                 with conn.cursor() as cur:
+                    # Create table if it doesn't exist
                     cur.execute(f'''
                         CREATE TABLE IF NOT EXISTS {Config.TABLE_NAME} (
                             {Config.COLUMN_ID} VARCHAR(50) PRIMARY KEY,
@@ -68,6 +69,22 @@ class PostgresDatabase(DatabaseInterface):
                             {Config.COLUMN_EXPIRY_TIME} TIMESTAMP WITH TIME ZONE
                         )
                     ''')
+
+                    # Migration: Add expiry_time column if it doesn't exist
+                    cur.execute(f'''
+                        DO $$
+                        BEGIN
+                            IF NOT EXISTS (
+                                SELECT 1 FROM information_schema.columns
+                                WHERE table_name = '{Config.TABLE_NAME}'
+                                AND column_name = '{Config.COLUMN_EXPIRY_TIME}'
+                            ) THEN
+                                ALTER TABLE {Config.TABLE_NAME}
+                                ADD COLUMN {Config.COLUMN_EXPIRY_TIME} TIMESTAMP WITH TIME ZONE;
+                            END IF;
+                        END $$;
+                    ''')
+
                     conn.commit()
             print("✅ PostgreSQL database initialized")
         except Exception as e:
