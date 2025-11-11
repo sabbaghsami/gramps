@@ -6,7 +6,7 @@ from flask import Flask, jsonify, request, send_from_directory
 import random
 import string
 import traceback
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from openai import OpenAI
 
 from config import Config
@@ -60,13 +60,22 @@ class ReminderApp:
         try:
             data = request.get_json()
             text = data.get('text', '').strip()
+            expiry_duration_minutes = data.get('expiry_duration_minutes')
 
             if not text:
                 return jsonify({'error': 'Message text is required'}), 400
 
+            # Calculate expiry time if duration is provided
+            expiry_time = None
+            if expiry_duration_minutes is not None and expiry_duration_minutes > 0:
+                now = datetime.now(timezone.utc)
+                expiry_dt = now + timedelta(minutes=expiry_duration_minutes)
+                expiry_time = expiry_dt.isoformat().replace('+00:00', 'Z')
+
             message = Message.create(
                 message_id=self.generate_id(),
-                text=text
+                text=text,
+                expiry_time=expiry_time
             )
 
             self.db.add_message(message)
@@ -135,7 +144,21 @@ class ReminderApp:
         except Exception as e:
             print(f"Error in translate: {e}")
             traceback.print_exc()
-            return jsonify({'error': f'Translation failed: {str(e)}'}), 500
+
+            # Provide more specific error messages
+            error_message = str(e)
+            if 'APIConnectionError' in str(type(e)):
+                error_message = 'Cannot connect to OpenAI API. Please check your internet connection and API key.'
+            elif 'AuthenticationError' in str(type(e)):
+                error_message = 'Invalid OpenAI API key. Please check your API key configuration.'
+            elif 'RateLimitError' in str(type(e)):
+                error_message = 'OpenAI API rate limit exceeded. Please try again later.'
+            elif 'APIError' in str(type(e)):
+                error_message = f'OpenAI API error: {str(e)}'
+            else:
+                error_message = f'Translation failed: {str(e)}'
+
+            return jsonify({'error': error_message}), 500
 
     def run(self) -> None:
         """Start the Flask development server."""

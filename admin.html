@@ -200,6 +200,27 @@
             <textarea id="translatedText" placeholder="Translation will appear here..."></textarea>
         </div>
 
+        <div class="form-group">
+            <label for="expiryPreset">Auto-delete after:</label>
+            <select id="expiryPreset" onchange="handleExpiryChange()" style="width: 100%; padding: 12px; border: 2px solid #e1e5e9; border-radius: 10px; font-size: 16px; transition: border-color 0.3s ease;">
+                <option value="never">Never</option>
+                <option value="60">1 hour</option>
+                <option value="120">2 hours</option>
+                <option value="360">6 hours</option>
+                <option value="720">12 hours</option>
+                <option value="1440">24 hours</option>
+                <option value="custom">Custom...</option>
+            </select>
+        </div>
+
+        <div class="form-group" id="customExpiryGroup" style="display: none;">
+            <label>Custom Duration:</label>
+            <div style="display: flex; gap: 10px;">
+                <input type="number" id="customHours" placeholder="Hours" min="0" style="flex: 1; padding: 12px; border: 2px solid #e1e5e9; border-radius: 10px; font-size: 16px;">
+                <input type="number" id="customMinutes" placeholder="Minutes" min="0" max="59" style="flex: 1; padding: 12px; border: 2px solid #e1e5e9; border-radius: 10px; font-size: 16px;">
+            </div>
+        </div>
+
         <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px;">
             <button onclick="addMessage()">📝 Add Message</button>
             <button onclick="loadMessages()">🔄 Refresh</button>
@@ -254,6 +275,36 @@
             }
         }
 
+        function handleExpiryChange() {
+            const preset = document.getElementById('expiryPreset').value;
+            const customGroup = document.getElementById('customExpiryGroup');
+
+            if (preset === 'custom') {
+                customGroup.style.display = 'block';
+            } else {
+                customGroup.style.display = 'none';
+            }
+        }
+
+        function getExpiryDurationMinutes() {
+            const preset = document.getElementById('expiryPreset').value;
+
+            if (preset === 'never') {
+                return null;
+            } else if (preset === 'custom') {
+                const hours = parseInt(document.getElementById('customHours').value) || 0;
+                const minutes = parseInt(document.getElementById('customMinutes').value) || 0;
+                const totalMinutes = (hours * 60) + minutes;
+
+                if (totalMinutes <= 0) {
+                    return null;
+                }
+                return totalMinutes;
+            } else {
+                return parseInt(preset);
+            }
+        }
+
         async function addMessage() {
             // Check if there's a translated message, use it; otherwise use original
             const translatedText = document.getElementById('translatedText').value.trim();
@@ -265,13 +316,20 @@
                 return;
             }
 
+            const expiryDuration = getExpiryDurationMinutes();
+
             try {
+                const requestBody = { text };
+                if (expiryDuration !== null) {
+                    requestBody.expiry_duration_minutes = expiryDuration;
+                }
+
                 const response = await fetch('/api/messages', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify({ text })
+                    body: JSON.stringify(requestBody)
                 });
 
                 if (response.ok) {
@@ -321,15 +379,26 @@
                     return;
                 }
                 
-                container.innerHTML = messages.map(msg => `
-                    <div class="message-item">
-                        <div class="message-text">${msg.text}</div>
-                        <div class="message-meta">
-                            Added: ${new Date(msg.timestamp).toLocaleString()}
-                            <button class="delete-btn" onclick="deleteMessage('${msg.id}')">Delete</button>
+                container.innerHTML = messages.map(msg => {
+                    let expiryInfo = '<span style="color: #00b894;">• Never expires</span>';
+                    if (msg.expiry_time) {
+                        const expiryDate = new Date(msg.expiry_time);
+                        expiryInfo = `<span style="color: #e17055;">• Expires: ${expiryDate.toLocaleString()}</span>`;
+                    }
+
+                    return `
+                        <div class="message-item">
+                            <div class="message-text">${msg.text}</div>
+                            <div class="message-meta">
+                                <div>
+                                    Added: ${new Date(msg.timestamp).toLocaleString()}<br>
+                                    ${expiryInfo}
+                                </div>
+                                <button class="delete-btn" onclick="deleteMessage('${msg.id}')">Delete</button>
+                            </div>
                         </div>
-                    </div>
-                `).join('');
+                    `;
+                }).join('');
                 
             } catch (error) {
                 document.getElementById('messagesList').innerHTML = 

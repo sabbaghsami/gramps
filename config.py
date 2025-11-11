@@ -28,6 +28,7 @@ class Config:
     COLUMN_ID = 'id'
     COLUMN_TEXT = 'text'
     COLUMN_TIMESTAMP = 'timestamp'
+    COLUMN_EXPIRY_TIME = 'expiry_time'
 
     @classmethod
     def use_postgres(cls) -> bool:
