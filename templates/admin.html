@@ -4,182 +4,32 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Admin - Grandad's Reminders</title>
-    <style>
-        * {
-            box-sizing: border-box;
-        }
-        
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            max-width: 900px;
-            margin: 0 auto;
-            padding: 20px;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            min-height: 100vh;
-        }
-        
-        .container {
-            background-color: white;
-            padding: 40px;
-            border-radius: 15px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
-            backdrop-filter: blur(10px);
-        }
-        
-        h1 {
-            color: #2c3e50;
-            text-align: center;
-            margin-bottom: 30px;
-            font-size: 2.5rem;
-            font-weight: 700;
-            background: linear-gradient(45deg, #667eea, #764ba2);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-        
-        .form-group {
-            margin-bottom: 20px;
-        }
-        
-        label {
-            display: block;
-            margin-bottom: 8px;
-            font-weight: bold;
-            color: #555;
-        }
-        
-        textarea {
-            width: 100%;
-            padding: 15px;
-            border: 2px solid #e1e5e9;
-            border-radius: 10px;
-            font-size: 16px;
-            resize: vertical;
-            min-height: 120px;
-            font-family: inherit;
-            transition: border-color 0.3s ease;
-        }
-        
-        textarea:focus {
-            outline: none;
-            border-color: #667eea;
-            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-        }
-        
-        button {
-            background: linear-gradient(45deg, #667eea, #764ba2);
-            color: white;
-            padding: 15px 30px;
-            border: none;
-            border-radius: 10px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            margin-right: 15px;
-            margin-bottom: 10px;
-            transition: all 0.3s ease;
-            box-shadow: 0 4px 15px rgba(102, 126, 234, 0.3);
-        }
-        
-        button:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
-        }
-        
-        button:active {
-            transform: translateY(0);
-        }
-        
-        .success {
-            background: linear-gradient(45deg, #00b894, #00a085);
-            color: white;
-            padding: 15px 20px;
-            border-radius: 10px;
-            margin: 20px 0;
-            border-left: 5px solid #00a085;
-            box-shadow: 0 4px 15px rgba(0, 184, 148, 0.3);
-        }
-        
-        .error {
-            background: linear-gradient(45deg, #e17055, #d63031);
-            color: white;
-            padding: 15px 20px;
-            border-radius: 10px;
-            margin: 20px 0;
-            border-left: 5px solid #d63031;
-            box-shadow: 0 4px 15px rgba(214, 48, 49, 0.3);
-        }
-        
-        .messages-list {
-            margin-top: 40px;
-        }
-        
-        .messages-list h2 {
-            color: #2c3e50;
-            font-size: 1.5rem;
-            margin-bottom: 20px;
-            border-bottom: 2px solid #667eea;
-            padding-bottom: 10px;
-        }
-        
-        .message-item {
-            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-            border: 1px solid #e1e5e9;
-            border-radius: 12px;
-            padding: 20px;
-            margin: 15px 0;
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-        }
-        
-        .message-item:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-        }
-        
-        .message-text {
-            font-size: 18px;
-            margin-bottom: 15px;
-            color: #2c3e50;
-            line-height: 1.6;
-            font-weight: 500;
-        }
-        
-        .message-meta {
-            font-size: 14px;
-            color: #6c757d;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-        
-        .delete-btn {
-            background: linear-gradient(45deg, #e17055, #d63031);
-            font-size: 14px;
-            padding: 8px 16px;
-            margin: 0;
-            border-radius: 6px;
-            transition: all 0.2s ease;
-            box-shadow: 0 2px 8px rgba(214, 48, 49, 0.3);
-        }
-        
-        .delete-btn:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 4px 12px rgba(214, 48, 49, 0.4);
-        }
-    </style>
+
+    <!-- Link to your separated CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/admin.css') }}">
 </head>
 <body>
     <div class="container">
         <div style="display:flex; justify-content: space-between; align-items: center; gap: 12px;">
-            <h1 style="margin: 0;">📝 Manage Grandad's Reminders</h1>
-            <a href="/auth/logout" style="text-decoration: none;">
-                <button type="button" title="Log out and return to login" style="background: linear-gradient(45deg, #6c757d, #495057);">🚪 Logout</button>
-            </a>
+            <div style="display:flex; align-items:center; gap:12px;">
+                <h1 style="margin: 0;">📝 Manage Reminders</h1>
+                <div>
+                    <label for="boardContext" style="font-size: 14px; color: #555; font-weight: normal;">Board:</label>
+                    <select id="boardContext" style="padding:8px 12px; border:2px solid #e1e5e9; border-radius: 8px;">
+                        <option value="personal">My Board</option>
+                    </select>
+                    <button id="newWorkspaceBtn" type="button" style="margin-left:8px; background: linear-gradient(45deg, #10b981, #059669);">＋ New Shared Board</button>
+                    <button id="inviteBtn" type="button" style="margin-left:8px; background: linear-gradient(45deg, #3b82f6, #2563eb);">✉ Invite</button>
+                </div>
+            </div>
+            <div style="display:flex; align-items:center; gap:10px;">
+                <div style="font-size:14px; color:#555;">Signed in as <strong>{{ current_username }}</strong></div>
+                <a href="/auth/logout" style="text-decoration: none;">
+                    <button type="button" title="Log out and return to login" style="background: linear-gradient(45deg, #6c757d, #495057);">🚪 Logout</button>
+                </a>
+            </div>
         </div>
-        
-        
+
         <div class="form-group">
             <label for="messageText">Original Message:</label>
             <textarea id="messageText" placeholder="Type a message for grandad here..."></textarea>
@@ -187,7 +37,7 @@
 
         <div class="form-group">
             <label for="targetLanguage">Translate to:</label>
-            <select id="targetLanguage" style="width: 100%; padding: 12px; border: 2px solid #e1e5e9; border-radius: 10px; font-size: 16px; transition: border-color 0.3s ease;">
+            <select id="targetLanguage" class="styled-select">
                 <option value="Levantine Arabic">Levantine Arabic (اللهجة الشامية)</option>
                 <option value="Modern Standard Arabic">Modern Standard Arabic (العربية الفصحى)</option>
                 <option value="Egyptian Arabic">Egyptian Arabic (اللهجة المصرية)</option>
@@ -197,7 +47,7 @@
             </select>
         </div>
 
-        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 20px;">
+        <div class="button-row">
             <button onclick="translateMessage()">🌐 Translate</button>
         </div>
 
@@ -208,7 +58,7 @@
 
         <div class="form-group">
             <label for="expiryPreset">Auto-delete after:</label>
-            <select id="expiryPreset" onchange="handleExpiryChange()" style="width: 100%; padding: 12px; border: 2px solid #e1e5e9; border-radius: 10px; font-size: 16px; transition: border-color 0.3s ease;">
+            <select id="expiryPreset" onchange="handleExpiryChange()" class="styled-select">
                 <option value="never">Never</option>
                 <option value="60">1 hour</option>
                 <option value="120">2 hours</option>
@@ -223,206 +73,28 @@
         <div class="form-group" id="customExpiryGroup" style="display: none;">
             <label>Custom Duration:</label>
             <div style="display: flex; gap: 10px;">
-                <input type="number" id="customHours" placeholder="Hours" min="0" style="flex: 1; padding: 12px; border: 2px solid #e1e5e9; border-radius: 10px; font-size: 16px;">
-                <input type="number" id="customMinutes" placeholder="Minutes" min="0" max="59" style="flex: 1; padding: 12px; border: 2px solid #e1e5e9; border-radius: 10px; font-size: 16px;">
+                <input type="number" id="customHours" placeholder="Hours" min="0" class="time-input">
+                <input type="number" id="customMinutes" placeholder="Minutes" min="0" max="59" class="time-input">
             </div>
         </div>
 
-        <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px;">
+        <div class="button-row">
             <button onclick="addMessage()">📝 Add Message</button>
             <button onclick="loadMessages()">🔄 Refresh</button>
-            <a href="/" target="_blank" style="text-decoration: none;">
+            <a id="previewLink" href="/" target="_blank" style="text-decoration: none;">
                 <button type="button">👀 Preview Display</button>
             </a>
         </div>
-        
+
         <div id="status"></div>
-        
+
         <div class="messages-list">
             <h2>Current Messages:</h2>
             <div id="messagesList">Loading...</div>
         </div>
     </div>
 
-    <script>
-        async function translateMessage() {
-            const text = document.getElementById('messageText').value.trim();
-            const targetLanguage = document.getElementById('targetLanguage').value;
-
-            if (!text) {
-                showStatus('Please enter a message to translate', 'error');
-                return;
-            }
-
-            showStatus('Translating...', 'success');
-
-            try {
-                const response = await fetch('/api/translate', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        text: text,
-                        target_language: targetLanguage
-                    })
-                });
-
-                const data = await response.json();
-
-                if (response.ok) {
-                    document.getElementById('translatedText').value = data.translated_text;
-                    document.getElementById('translationGroup').style.display = 'block';
-                    showStatus('Translation complete! You can edit it before adding.', 'success');
-                } else {
-                    showStatus('Translation failed: ' + (data.error || 'Unknown error'), 'error');
-                }
-            } catch (error) {
-                showStatus('Error: Could not translate message', 'error');
-            }
-        }
-
-        function handleExpiryChange() {
-            const preset = document.getElementById('expiryPreset').value;
-            const customGroup = document.getElementById('customExpiryGroup');
-
-            if (preset === 'custom') {
-                customGroup.style.display = 'block';
-            } else {
-                customGroup.style.display = 'none';
-            }
-        }
-
-        function getExpiryDurationMinutes() {
-            const preset = document.getElementById('expiryPreset').value;
-
-            if (preset === 'never') {
-                return null;
-            } else if (preset === 'custom') {
-                const hours = parseInt(document.getElementById('customHours').value) || 0;
-                const minutes = parseInt(document.getElementById('customMinutes').value) || 0;
-                const totalMinutes = (hours * 60) + minutes;
-
-                if (totalMinutes <= 0) {
-                    return null;
-                }
-                return totalMinutes;
-            } else {
-                return parseInt(preset);
-            }
-        }
-
-        async function addMessage() {
-            // Check if there's a translated message, use it; otherwise use original
-            const translatedText = document.getElementById('translatedText').value.trim();
-            const originalText = document.getElementById('messageText').value.trim();
-            const text = translatedText || originalText;
-
-            if (!text) {
-                showStatus('Please enter a message', 'error');
-                return;
-            }
-
-            const expiryDuration = getExpiryDurationMinutes();
-
-            try {
-                const requestBody = { text };
-                if (expiryDuration !== null) {
-                    requestBody.expiry_duration_minutes = expiryDuration;
-                }
-
-                const response = await fetch('/api/messages', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify(requestBody)
-                });
-
-                if (response.ok) {
-                    document.getElementById('messageText').value = '';
-                    document.getElementById('translatedText').value = '';
-                    document.getElementById('translationGroup').style.display = 'none';
-                    showStatus('Message added successfully!', 'success');
-                    loadMessages();
-                } else {
-                    showStatus('Failed to add message', 'error');
-                }
-            } catch (error) {
-                showStatus('Error: Could not add message', 'error');
-            }
-        }
-        
-        async function deleteMessage(id) {
-            if (!confirm('Are you sure you want to delete this message?')) {
-                return;
-            }
-            
-            try {
-                const response = await fetch(`/api/messages/${id}`, {
-                    method: 'DELETE'
-                });
-                
-                if (response.ok) {
-                    showStatus('Message deleted', 'success');
-                    loadMessages();
-                } else {
-                    showStatus('Failed to delete message', 'error');
-                }
-            } catch (error) {
-                showStatus('Error: Could not delete message', 'error');
-            }
-        }
-        
-        async function loadMessages() {
-            try {
-                const response = await fetch('/api/messages');
-                const messages = await response.json();
-                
-                const container = document.getElementById('messagesList');
-                
-                if (messages.length === 0) {
-                    container.innerHTML = '<p>No messages yet</p>';
-                    return;
-                }
-                
-                container.innerHTML = messages.map(msg => {
-                    let expiryInfo = '<span style="color: #00b894;">• Never expires</span>';
-                    if (msg.expiry_time) {
-                        const expiryDate = new Date(msg.expiry_time);
-                        expiryInfo = `<span style="color: #e17055;">• Expires: ${expiryDate.toLocaleString()}</span>`;
-                    }
-
-                    return `
-                        <div class="message-item">
-                            <div class="message-text">${msg.text}</div>
-                            <div class="message-meta">
-                                <div>
-                                    Added: ${new Date(msg.timestamp).toLocaleString()}<br>
-                                    ${expiryInfo}
-                                </div>
-                                <button class="delete-btn" onclick="deleteMessage('${msg.id}')">Delete</button>
-                            </div>
-                        </div>
-                    `;
-                }).join('');
-                
-            } catch (error) {
-                document.getElementById('messagesList').innerHTML = 
-                    '<p>Could not load messages</p>';
-            }
-        }
-        
-        function showStatus(message, type) {
-            const status = document.getElementById('status');
-            status.innerHTML = `<div class="${type}">${message}</div>`;
-            setTimeout(() => {
-                status.innerHTML = '';
-            }, 3000);
-        }
-        
-        // Load messages on page load
-        loadMessages();
-    </script>
+    <!-- Link to JS -->
+    <script src="{{ url_for('static', filename='js/admin.js') }}"></script>
 </body>
 </html>

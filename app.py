@@ -15,7 +15,8 @@ from config import Config
 from database import get_database
 from models import Message
 from auth.routes import auth_bp
-from auth.middleware import login_required
+from auth.email_service import EmailService
+from auth.middleware import login_required, get_current_user
 from error_handlers import register_error_handlers
 
 
@@ -43,9 +44,17 @@ class ReminderApp:
         """Register all Flask routes."""
         self.app.add_url_rule('/', 'index', self.index)
         self.app.add_url_rule('/admin', 'admin', self.admin)
+        # Messages (context-aware)
         self.app.add_url_rule('/api/messages', 'get_messages', self.get_messages, methods=['GET'])
         self.app.add_url_rule('/api/messages', 'add_message', self.add_message, methods=['POST'])
         self.app.add_url_rule('/api/messages/<message_id>', 'delete_message', self.delete_message, methods=['DELETE'])
+        # Workspaces (shared boards)
+        self.app.add_url_rule('/api/workspaces', 'list_workspaces', self.list_workspaces, methods=['GET'])
+        self.app.add_url_rule('/api/workspaces', 'create_workspace', self.create_workspace, methods=['POST'])
+        self.app.add_url_rule('/api/workspaces/<int:workspace_id>', 'rename_workspace', self.rename_workspace, methods=['PATCH'])
+        self.app.add_url_rule('/api/workspaces/<int:workspace_id>', 'delete_workspace', self.delete_workspace, methods=['DELETE'])
+        self.app.add_url_rule('/api/workspaces/<int:workspace_id>/invite', 'invite_workspace', self.invite_workspace, methods=['POST'])
+        self.app.add_url_rule('/workspaces/join/<token>', 'join_workspace', self.join_workspace, methods=['GET'])
         self.app.add_url_rule('/api/translate', 'translate', self.translate, methods=['POST'])
 
     @staticmethod
@@ -63,7 +72,8 @@ class ReminderApp:
     @login_required
     def admin(self):
         """Serve the admin page."""
-        return render_template('admin.html')
+        user = get_current_user()
+        return render_template('admin.html', current_username=(user.username if user else ''))
 
     @login_required
     def get_messages(self):
@@ -72,7 +82,14 @@ class ReminderApp:
             user_id = self._current_user_id()
             if not user_id:
                 return jsonify({'error': 'Unauthorized'}), 401
-            messages = self.db.get_messages_for_user(user_id)
+            ctx = request.args.get('context', 'personal')
+            if ctx.startswith('workspace:'):
+                workspace_id = self._parse_workspace_id(ctx)
+                if workspace_id is None or not self.db.is_workspace_member(workspace_id, user_id):
+                    return jsonify({'error': 'Forbidden'}), 403
+                messages = self.db.get_messages_for_workspace(workspace_id)
+            else:
+                messages = self.db.get_messages_for_user(user_id)
             return jsonify([msg.to_dict() for msg in messages]), 200
         except Exception as e:
             print(f"Error in get_messages: {e}")
@@ -106,7 +123,14 @@ class ReminderApp:
                 expiry_time=expiry_time
             )
 
-            self.db.add_message_for_user(message, user_id)
+            ctx = request.args.get('context', 'personal')
+            if ctx.startswith('workspace:'):
+                workspace_id = self._parse_workspace_id(ctx)
+                if workspace_id is None or not self.db.is_workspace_member(workspace_id, user_id):
+                    return jsonify({'error': 'Forbidden'}), 403
+                self.db.add_message_to_workspace(message, workspace_id)
+            else:
+                self.db.add_message_for_user(message, user_id)
             return jsonify(message.to_dict()), 201
 
         except Exception as e:
@@ -121,8 +145,15 @@ class ReminderApp:
             user_id = self._current_user_id()
             if not user_id:
                 return jsonify({'error': 'Unauthorized'}), 401
-
-            deleted = self.db.delete_message_for_user(message_id, user_id)
+            ctx = request.args.get('context', 'personal')
+            if ctx.startswith('workspace:'):
+                workspace_id = self._parse_workspace_id(ctx)
+                if workspace_id is None or not self.db.is_workspace_member(workspace_id, user_id):
+                    return jsonify({'error': 'Forbidden'}), 403
+                # Phase 2 rule: any member can delete in a workspace
+                deleted = self.db.delete_message_in_workspace(message_id, workspace_id)
+            else:
+                deleted = self.db.delete_message_for_user(message_id, user_id)
 
             if not deleted:
                 return jsonify({'error': 'Message not found'}), 404
@@ -132,6 +163,80 @@ class ReminderApp:
         except Exception as e:
             print(f"Error in delete_message: {e}")
             return jsonify({'error': 'Failed to delete message'}), 500
+
+    @login_required
+    def list_workspaces(self):
+        user_id = self._current_user_id()
+        if not user_id:
+            return jsonify({'error': 'Unauthorized'}), 401
+        return jsonify(self.db.list_workspaces_for_user(user_id)), 200
+
+    @login_required
+    def create_workspace(self):
+        user_id = self._current_user_id()
+        if not user_id:
+            return jsonify({'error': 'Unauthorized'}), 401
+        data = request.get_json() or {}
+        name = (data.get('name') or '').strip()
+        if not name:
+            return jsonify({'error': 'Name is required'}), 400
+        ws = self.db.create_workspace(name, user_id)
+        return jsonify(ws), 201
+
+    @login_required
+    def rename_workspace(self, workspace_id: int):
+        user_id = self._current_user_id()
+        if not user_id:
+            return jsonify({'error': 'Unauthorized'}), 401
+        data = request.get_json() or {}
+        name = (data.get('name') or '').strip()
+        if not name:
+            return jsonify({'error': 'Name is required'}), 400
+        if not self.db.rename_workspace(workspace_id, user_id, name):
+            return jsonify({'error': 'Forbidden or not found'}), 403
+        return jsonify({'success': True}), 200
+
+    @login_required
+    def delete_workspace(self, workspace_id: int):
+        user_id = self._current_user_id()
+        if not user_id:
+            return jsonify({'error': 'Unauthorized'}), 401
+        if not self.db.delete_workspace(workspace_id, user_id):
+            return jsonify({'error': 'Forbidden or not found'}), 403
+        return jsonify({'success': True}), 200
+
+    @login_required
+    def invite_workspace(self, workspace_id: int):
+        user_id = self._current_user_id()
+        if not user_id:
+            return jsonify({'error': 'Unauthorized'}), 401
+        # Any member can invite (per requirements)
+        if not self.db.is_workspace_member(workspace_id, user_id):
+            return jsonify({'error': 'Forbidden'}), 403
+        data = request.get_json() or {}
+        email = (data.get('email') or '').strip().lower()
+        username = (data.get('username') or '').strip() or None
+        if not email and not username:
+            return jsonify({'error': 'Provide email or username'}), 400
+        invite = self.db.create_workspace_invite(workspace_id, user_id, email if email else None, username)
+        # Email
+        join_url = f"{Config.BASE_URL}/workspaces/join/{invite['token']}"
+        ws = self.db.get_workspace(workspace_id)
+        inviter = self._get_user_profile(user_id)
+        if email:
+            EmailService().send_workspace_invite_email(email, inviter['username'], ws['name'], join_url)
+        return jsonify({'success': True, 'join_url': join_url if not email else None}), 201
+
+    def join_workspace(self, token: str):
+        user_id = self._current_user_id()
+        if not user_id:
+            # Force login and bounce back
+            return self._redirect_to_login_with_next()
+        ws_id = self.db.accept_workspace_invite(token, user_id)
+        if not ws_id:
+            return jsonify({'error': 'Invalid or expired invite'}), 400
+        # Redirect to admin in that workspace
+        return self._redirect(f"/admin?context=workspace:{ws_id}")
 
     
 
@@ -237,6 +342,34 @@ class ReminderApp:
                         conn.commit()
                         return None
                     return int(row['user_id'])
+        except Exception:
+            return None
+
+    @staticmethod
+    def _get_user_profile(user_id: int) -> dict | None:
+        try:
+            with connect(Config.DATABASE_URL, row_factory=dict_row) as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT id, username, email FROM users WHERE id = %s", (user_id,))
+                    row = cur.fetchone()
+                    return dict(row) if row else None
+        except Exception:
+            return None
+
+    @staticmethod
+    def _redirect_to_login_with_next():
+        from flask import redirect, url_for, request
+        next_url = request.full_path if request.query_string else request.path
+        return redirect(url_for('auth.login_page', next=next_url))
+
+    @staticmethod
+    def _redirect(path: str):
+        from flask import redirect
+        return redirect(path)
+    @staticmethod
+    def _parse_workspace_id(ctx: str) -> int | None:
+        try:
+            return int(ctx.split(':', 1)[1])
         except Exception:
             return None
 

@@ -91,9 +91,18 @@
     </div>
 
     <script>
+        function getContext() {
+            const urlCtx = new URLSearchParams(window.location.search).get('context');
+            return urlCtx || localStorage.getItem('boardContext') || 'personal';
+        }
+
+        function contextQuery() {
+            return `?context=${encodeURIComponent(getContext())}`;
+        }
+
         async function loadMessages() {
             try {
-                const response = await fetch('/api/messages');
+                const response = await fetch('/api/messages' + contextQuery());
                 const messages = await response.json();
                 
                 const container = document.getElementById('messages');

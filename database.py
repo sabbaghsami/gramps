@@ -4,8 +4,11 @@ Database interface for message storage (PostgreSQL-only, user-scoped).
 Phase 1: messages belong to a single owner (owner_user_id).
 """
 from abc import ABC, abstractmethod
-from typing import List
+from typing import List, Optional
 import traceback
+import secrets
+import hashlib
+from datetime import datetime, timedelta, timezone
 
 from config import Config
 from models import Message
@@ -50,7 +53,7 @@ class PostgresDatabase(DatabaseInterface):
         return self.psycopg.connect(Config.DATABASE_URL, row_factory=self.dict_row)
 
     def initialize(self) -> None:
-        """Create/alter tables and run migrations (owner_user_id)."""
+        """Create/alter tables and run migrations (owner_user_id, workspaces)."""
         try:
             with self._get_connection() as conn:
                 with conn.cursor() as cur:
@@ -111,6 +114,74 @@ class PostgresDatabase(DatabaseInterface):
                                 FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE;
                             END IF;
                         END $$;
+                    ''')
+
+                    # --- Shared boards (workspaces) ---
+                    cur.execute('''
+                        CREATE TABLE IF NOT EXISTS workspaces (
+                            id SERIAL PRIMARY KEY,
+                            name TEXT NOT NULL,
+                            created_by_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                        )
+                    ''')
+
+                    cur.execute('''
+                        CREATE TABLE IF NOT EXISTS workspace_members (
+                            workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+                            user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                            role TEXT NOT NULL DEFAULT 'owner',
+                            joined_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                            PRIMARY KEY (workspace_id, user_id)
+                        )
+                    ''')
+
+                    # Add messages.workspace_id column if missing
+                    cur.execute(f'''
+                        DO $$
+                        BEGIN
+                            IF NOT EXISTS (
+                                SELECT 1 FROM information_schema.columns
+                                WHERE table_name = '{Config.TABLE_NAME}'
+                                  AND column_name = 'workspace_id'
+                            ) THEN
+                                ALTER TABLE {Config.TABLE_NAME}
+                                ADD COLUMN workspace_id INTEGER REFERENCES workspaces(id) ON DELETE CASCADE;
+                            END IF;
+                        END $$;
+                    ''')
+
+                    # Index on workspace_id
+                    cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{Config.TABLE_NAME}_workspace ON {Config.TABLE_NAME}(workspace_id)")
+
+                    # XOR constraint: exactly one of owner_user_id, workspace_id is non-null
+                    cur.execute(f'''
+                        DO $$
+                        BEGIN
+                            IF NOT EXISTS (
+                                SELECT 1 FROM pg_constraint WHERE conname = 'chk_{Config.TABLE_NAME}_owner_xor_workspace'
+                            ) THEN
+                                ALTER TABLE {Config.TABLE_NAME}
+                                ADD CONSTRAINT chk_{Config.TABLE_NAME}_owner_xor_workspace
+                                CHECK ((owner_user_id IS NULL) <> (workspace_id IS NULL));
+                            END IF;
+                        END $$;
+                    ''')
+
+                    # Invites table
+                    cur.execute('''
+                        CREATE TABLE IF NOT EXISTS workspace_invites (
+                            id SERIAL PRIMARY KEY,
+                            workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
+                            inviter_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                            invitee_email TEXT,
+                            invitee_username TEXT,
+                            token_hash TEXT NOT NULL UNIQUE,
+                            expires_at TIMESTAMPTZ NOT NULL,
+                            accepted_at TIMESTAMPTZ,
+                            accepted_by_user_id INTEGER REFERENCES users(id),
+                            created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                        )
                     ''')
 
                     conn.commit()
@@ -176,6 +247,180 @@ class PostgresDatabase(DatabaseInterface):
         except Exception as e:
             print(f"Error deleting message: {e}")
             raise
+
+    # -------- Workspaces --------
+    def create_workspace(self, name: str, creator_user_id: int) -> dict:
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "INSERT INTO workspaces (name, created_by_user_id) VALUES (%s, %s) RETURNING id, name, created_at",
+                    (name, creator_user_id),
+                )
+                ws = cur.fetchone()
+                # Owner membership
+                cur.execute(
+                    "INSERT INTO workspace_members (workspace_id, user_id, role) VALUES (%s, %s, 'owner')",
+                    (ws['id'], creator_user_id),
+                )
+                conn.commit()
+                return {'id': ws['id'], 'name': ws['name'], 'created_at': ws['created_at']}
+
+    def list_workspaces_for_user(self, user_id: int) -> list[dict]:
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    '''SELECT w.id, w.name, wm.role, w.created_at
+                         FROM workspace_members wm JOIN workspaces w ON wm.workspace_id = w.id
+                        WHERE wm.user_id = %s
+                        ORDER BY w.created_at DESC''',
+                    (user_id,),
+                )
+                return [dict(r) for r in cur.fetchall()]
+
+    def is_workspace_member(self, workspace_id: int, user_id: int) -> bool:
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT 1 FROM workspace_members WHERE workspace_id = %s AND user_id = %s",
+                    (workspace_id, user_id),
+                )
+                return cur.fetchone() is not None
+
+    def rename_workspace(self, workspace_id: int, owner_user_id: int, new_name: str) -> bool:
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                # Only creator/owner may rename
+                cur.execute(
+                    "UPDATE workspaces SET name = %s WHERE id = %s AND created_by_user_id = %s",
+                    (new_name, workspace_id, owner_user_id),
+                )
+                conn.commit()
+                return cur.rowcount > 0
+
+    def delete_workspace(self, workspace_id: int, owner_user_id: int) -> bool:
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "DELETE FROM workspaces WHERE id = %s AND created_by_user_id = %s",
+                    (workspace_id, owner_user_id),
+                )
+                conn.commit()
+                return cur.rowcount > 0
+
+    def get_messages_for_workspace(self, workspace_id: int) -> List[Message]:
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        f'''SELECT {Config.COLUMN_ID}, {Config.COLUMN_TEXT}, {Config.COLUMN_TIMESTAMP}, {Config.COLUMN_EXPIRY_TIME}
+                            FROM {Config.TABLE_NAME}
+                           WHERE workspace_id = %s
+                             AND ({Config.COLUMN_EXPIRY_TIME} IS NULL OR {Config.COLUMN_EXPIRY_TIME} > NOW())
+                        ORDER BY {Config.COLUMN_TIMESTAMP} DESC''',
+                        (workspace_id,),
+                    )
+                    rows = cur.fetchall()
+                    return [
+                        Message(
+                            id=row[Config.COLUMN_ID],
+                            text=row[Config.COLUMN_TEXT],
+                            timestamp=row[Config.COLUMN_TIMESTAMP].isoformat().replace('+00:00', 'Z'),
+                            expiry_time=row[Config.COLUMN_EXPIRY_TIME].isoformat().replace('+00:00', 'Z') if row[Config.COLUMN_EXPIRY_TIME] else None
+                        )
+                        for row in rows
+                    ]
+        except Exception as e:
+            print(f"Error loading workspace messages: {e}")
+            return []
+
+    def add_message_to_workspace(self, message: Message, workspace_id: int) -> None:
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        f'INSERT INTO {Config.TABLE_NAME} ({Config.COLUMN_ID}, {Config.COLUMN_TEXT}, {Config.COLUMN_TIMESTAMP}, {Config.COLUMN_EXPIRY_TIME}, workspace_id) '
+                        f'VALUES (%s, %s, %s, %s, %s)',
+                        (message.id, message.text, message.timestamp, message.expiry_time, workspace_id)
+                    )
+                    conn.commit()
+        except Exception as e:
+            print(f"Error saving workspace message: {e}")
+            raise
+
+    def delete_message_in_workspace(self, message_id: str, workspace_id: int) -> bool:
+        try:
+            with self._get_connection() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        f'DELETE FROM {Config.TABLE_NAME} WHERE {Config.COLUMN_ID} = %s AND workspace_id = %s',
+                        (message_id, workspace_id)
+                    )
+                    deleted = cur.rowcount
+                    conn.commit()
+                    return deleted > 0
+        except Exception as e:
+            print(f"Error deleting workspace message: {e}")
+            raise
+
+    # -------- Invites --------
+    @staticmethod
+    def _hash_token(token: str) -> str:
+        return hashlib.sha256(token.encode('utf-8')).hexdigest()
+
+    def get_workspace(self, workspace_id: int) -> Optional[dict]:
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id, name, created_by_user_id, created_at FROM workspaces WHERE id = %s", (workspace_id,))
+                row = cur.fetchone()
+                return dict(row) if row else None
+
+    def create_workspace_invite(self, workspace_id: int, inviter_user_id: int,
+                                 invitee_email: Optional[str], invitee_username: Optional[str],
+                                 expires_days: int = 7) -> dict:
+        token = secrets.token_urlsafe(32)
+        token_hash = self._hash_token(token)
+        expires_at = datetime.now(timezone.utc) + timedelta(days=expires_days)
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    '''INSERT INTO workspace_invites
+                       (workspace_id, inviter_user_id, invitee_email, invitee_username, token_hash, expires_at)
+                       VALUES (%s, %s, %s, %s, %s, %s)
+                       RETURNING id''',
+                    (workspace_id, inviter_user_id, invitee_email, invitee_username, token_hash, expires_at)
+                )
+                invite_id = cur.fetchone()['id']
+                conn.commit()
+        return {"id": invite_id, "token": token, "expires_at": expires_at}
+
+    def accept_workspace_invite(self, token: str, user_id: int) -> Optional[int]:
+        token_hash = self._hash_token(token)
+        now = datetime.now(timezone.utc)
+        with self._get_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    '''SELECT id, workspace_id, expires_at, accepted_at FROM workspace_invites
+                         WHERE token_hash = %s''',
+                    (token_hash,),
+                )
+                row = cur.fetchone()
+                if not row:
+                    return None
+                if row['accepted_at'] is not None or row['expires_at'] < now:
+                    return None
+                workspace_id = row['workspace_id']
+                # Ensure membership
+                cur.execute(
+                    "INSERT INTO workspace_members (workspace_id, user_id, role) VALUES (%s, %s, 'member') ON CONFLICT DO NOTHING",
+                    (workspace_id, user_id),
+                )
+                # Mark invite accepted
+                cur.execute(
+                    "UPDATE workspace_invites SET accepted_at = %s, accepted_by_user_id = %s WHERE id = %s",
+                    (now, user_id, row['id']),
+                )
+                conn.commit()
+                return workspace_id
 
 
 def get_database() -> DatabaseInterface:

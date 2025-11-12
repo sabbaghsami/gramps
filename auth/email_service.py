@@ -181,3 +181,66 @@ class EmailService:
         """
 
         return self.send_email(to_email, subject, html_body)
+
+    def send_workspace_invite_email(self, to_email: str, inviter_name: str, workspace_name: str, join_url: str) -> bool:
+        """Send a workspace invite email with a join link."""
+        subject = f"You're invited to a shared board: {workspace_name}"
+        html_body = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <style>
+                body {{
+                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                    background-color: #f4f4f4;
+                    padding: 20px;
+                }}
+                .container {{
+                    max-width: 600px;
+                    margin: 0 auto;
+                    background: white;
+                    padding: 40px;
+                    border-radius: 10px;
+                    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+                }}
+                .header {{
+                    text-align: center;
+                    color: #667eea;
+                    margin-bottom: 30px;
+                }}
+                .button {{
+                    display: inline-block;
+                    background: linear-gradient(45deg, #667eea, #764ba2);
+                    color: white;
+                    padding: 15px 30px;
+                    text-decoration: none;
+                    border-radius: 5px;
+                    margin: 20px 0;
+                }}
+                .footer {{
+                    margin-top: 30px;
+                    text-align: center;
+                    color: #666;
+                    font-size: 12px;
+                }}
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1 class="header">Shared Board Invitation</h1>
+                <p>Hi,</p>
+                <p><strong>{inviter_name}</strong> invited you to collaborate on the shared board <strong>{workspace_name}</strong>.</p>
+                <p style="text-align: center;">
+                    <a href="{join_url}" class="button">Accept Invitation</a>
+                </p>
+                <p>Or copy and paste this link into your browser:</p>
+                <p style="word-break: break-all; color: #667eea;">{join_url}</p>
+                <div class="footer">
+                    <p>This invite will expire in 7 days.</p>
+                    <p>&copy; 2025 Grandad Reminders</p>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        return self.send_email(to_email, subject, html_body)

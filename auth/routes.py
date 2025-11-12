@@ -161,7 +161,11 @@ def login():
         )
 
         # Set cookie
-        response = make_response(redirect(url_for('admin')))
+        # honor ?next= for redirects within the app
+        next_url = request.args.get('next')
+        if not next_url or not next_url.startswith('/'):
+            next_url = url_for('admin')
+        response = make_response(redirect(next_url))
         response.set_cookie(
             'session_token',
             session_token,
