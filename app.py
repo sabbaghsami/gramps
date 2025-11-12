@@ -133,6 +133,8 @@ class ReminderApp:
             print(f"Error in delete_message: {e}")
             return jsonify({'error': 'Failed to delete message'}), 500
 
+    
+
     @login_required
     def translate(self):
         """POST /api/translate - Translate text using OpenAI API."""
