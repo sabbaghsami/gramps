@@ -1,11 +1,10 @@
 """
-Database interface for message storage.
-Supports both PostgreSQL and JSON file storage.
+Database interface for message storage (PostgreSQL-only, user-scoped).
+
+Phase 1: messages belong to a single owner (owner_user_id).
 """
 from abc import ABC, abstractmethod
-from typing import List, Optional
-import json
-import os
+from typing import List
 import traceback
 
 from config import Config
@@ -17,27 +16,22 @@ class DatabaseInterface(ABC):
 
     @abstractmethod
     def initialize(self) -> None:
-        """Initialize the database/storage."""
+        """Initialize the database (migrations, indexes)."""
         pass
 
     @abstractmethod
-    def get_all_messages(self) -> List[Message]:
-        """Retrieve all messages."""
+    def get_messages_for_user(self, user_id: int) -> List[Message]:
+        """Retrieve all non-expired messages for a user."""
         pass
 
     @abstractmethod
-    def add_message(self, message: Message) -> None:
-        """Add a new message."""
+    def add_message_for_user(self, message: Message, owner_user_id: int) -> None:
+        """Add a new message for a specific user."""
         pass
 
     @abstractmethod
-    def delete_message(self, message_id: str) -> bool:
-        """
-        Delete a message by ID.
-
-        Returns:
-            True if message was deleted, False if not found
-        """
+    def delete_message_for_user(self, message_id: str, owner_user_id: int) -> bool:
+        """Delete a message by ID only if it belongs to the user."""
         pass
 
 
@@ -56,7 +50,7 @@ class PostgresDatabase(DatabaseInterface):
         return self.psycopg.connect(Config.DATABASE_URL, row_factory=self.dict_row)
 
     def initialize(self) -> None:
-        """Create the messages table if it doesn't exist and run migrations."""
+        """Create/alter tables and run migrations (owner_user_id)."""
         try:
             with self._get_connection() as conn:
                 with conn.cursor() as cur:
@@ -66,11 +60,12 @@ class PostgresDatabase(DatabaseInterface):
                             {Config.COLUMN_ID} VARCHAR(50) PRIMARY KEY,
                             {Config.COLUMN_TEXT} TEXT NOT NULL,
                             {Config.COLUMN_TIMESTAMP} TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
-                            {Config.COLUMN_EXPIRY_TIME} TIMESTAMP WITH TIME ZONE
+                            {Config.COLUMN_EXPIRY_TIME} TIMESTAMP WITH TIME ZONE,
+                            owner_user_id INTEGER
                         )
                     ''')
 
-                    # Migration: Add expiry_time column if it doesn't exist
+                    # Migration: Add expiry_time column if it doesn't exist (idempotent)
                     cur.execute(f'''
                         DO $$
                         BEGIN
@@ -85,22 +80,57 @@ class PostgresDatabase(DatabaseInterface):
                         END $$;
                     ''')
 
+                    # Migration: Add owner_user_id column if not exists
+                    cur.execute(f'''
+                        DO $$
+                        BEGIN
+                            IF NOT EXISTS (
+                                SELECT 1 FROM information_schema.columns
+                                WHERE table_name = '{Config.TABLE_NAME}'
+                                  AND column_name = 'owner_user_id'
+                            ) THEN
+                                ALTER TABLE {Config.TABLE_NAME}
+                                ADD COLUMN owner_user_id INTEGER;
+                            END IF;
+                        END $$;
+                    ''')
+
+                    # Index for owner_user_id
+                    cur.execute(f"CREATE INDEX IF NOT EXISTS idx_{Config.TABLE_NAME}_owner ON {Config.TABLE_NAME}(owner_user_id)")
+
+                    # FK to auth.users (if not exists)
+                    cur.execute(f'''
+                        DO $$
+                        BEGIN
+                            IF NOT EXISTS (
+                                SELECT 1 FROM pg_constraint
+                                WHERE conname = 'fk_{Config.TABLE_NAME}_owner_user_id_users'
+                            ) THEN
+                                ALTER TABLE {Config.TABLE_NAME}
+                                ADD CONSTRAINT fk_{Config.TABLE_NAME}_owner_user_id_users
+                                FOREIGN KEY (owner_user_id) REFERENCES users(id) ON DELETE CASCADE;
+                            END IF;
+                        END $$;
+                    ''')
+
                     conn.commit()
             print("✅ PostgreSQL database initialized")
         except Exception as e:
             print(f"❌ Error initializing database: {e}")
             traceback.print_exc()
 
-    def get_all_messages(self) -> List[Message]:
-        """Retrieve all non-expired messages ordered by timestamp descending."""
+    def get_messages_for_user(self, user_id: int) -> List[Message]:
+        """Retrieve all non-expired messages for a specific user."""
         try:
             with self._get_connection() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
-                        f'SELECT {Config.COLUMN_ID}, {Config.COLUMN_TEXT}, {Config.COLUMN_TIMESTAMP}, {Config.COLUMN_EXPIRY_TIME} '
-                        f'FROM {Config.TABLE_NAME} '
-                        f'WHERE {Config.COLUMN_EXPIRY_TIME} IS NULL OR {Config.COLUMN_EXPIRY_TIME} > NOW() '
-                        f'ORDER BY {Config.COLUMN_TIMESTAMP} DESC'
+                        f'''SELECT {Config.COLUMN_ID}, {Config.COLUMN_TEXT}, {Config.COLUMN_TIMESTAMP}, {Config.COLUMN_EXPIRY_TIME}
+                            FROM {Config.TABLE_NAME}
+                           WHERE owner_user_id = %s
+                             AND ({Config.COLUMN_EXPIRY_TIME} IS NULL OR {Config.COLUMN_EXPIRY_TIME} > NOW())
+                        ORDER BY {Config.COLUMN_TIMESTAMP} DESC''',
+                        (user_id,)
                     )
                     rows = cur.fetchall()
                     return [
@@ -116,29 +146,29 @@ class PostgresDatabase(DatabaseInterface):
             print(f"Error loading messages: {e}")
             return []
 
-    def add_message(self, message: Message) -> None:
-        """Insert a new message into the database."""
+    def add_message_for_user(self, message: Message, owner_user_id: int) -> None:
+        """Insert a new message into the database for a user."""
         try:
             with self._get_connection() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
-                        f'INSERT INTO {Config.TABLE_NAME} ({Config.COLUMN_ID}, {Config.COLUMN_TEXT}, {Config.COLUMN_TIMESTAMP}, {Config.COLUMN_EXPIRY_TIME}) '
-                        f'VALUES (%s, %s, %s, %s)',
-                        (message.id, message.text, message.timestamp, message.expiry_time)
+                        f'INSERT INTO {Config.TABLE_NAME} ({Config.COLUMN_ID}, {Config.COLUMN_TEXT}, {Config.COLUMN_TIMESTAMP}, {Config.COLUMN_EXPIRY_TIME}, owner_user_id) '
+                        f'VALUES (%s, %s, %s, %s, %s)',
+                        (message.id, message.text, message.timestamp, message.expiry_time, owner_user_id)
                     )
                     conn.commit()
         except Exception as e:
             print(f"Error saving message: {e}")
             raise
 
-    def delete_message(self, message_id: str) -> bool:
-        """Delete a message by ID."""
+    def delete_message_for_user(self, message_id: str, owner_user_id: int) -> bool:
+        """Delete a message by ID if owned by the user."""
         try:
             with self._get_connection() as conn:
                 with conn.cursor() as cur:
                     cur.execute(
-                        f'DELETE FROM {Config.TABLE_NAME} WHERE {Config.COLUMN_ID} = %s',
-                        (message_id,)
+                        f'DELETE FROM {Config.TABLE_NAME} WHERE {Config.COLUMN_ID} = %s AND owner_user_id = %s',
+                        (message_id, owner_user_id)
                     )
                     deleted = cur.rowcount
                     conn.commit()
@@ -148,74 +178,10 @@ class PostgresDatabase(DatabaseInterface):
             raise
 
 
-class JSONDatabase(DatabaseInterface):
-    """JSON file-based database implementation for local development."""
-
-    def __init__(self):
-        self.file_path = Config.JSON_DATA_FILE
-
-    def initialize(self) -> None:
-        """Ensure the JSON file exists."""
-        if not os.path.exists(self.file_path):
-            self._save_messages([])
-        print("📝 Using JSON file storage (local mode)")
-
-    def _load_messages(self) -> List[dict]:
-        """Load raw message data from JSON file."""
-        try:
-            if os.path.exists(self.file_path):
-                with open(self.file_path, 'r') as f:
-                    return json.load(f)
-            return []
-        except Exception as e:
-            print(f"Error loading messages: {e}")
-            return []
-
-    def _save_messages(self, messages: List[dict]) -> None:
-        """Save raw message data to JSON file."""
-        try:
-            with open(self.file_path, 'w') as f:
-                json.dump(messages, f, indent=2)
-        except Exception as e:
-            print(f"Error saving messages: {e}")
-            raise
-
-    def get_all_messages(self) -> List[Message]:
-        """Retrieve all non-expired messages from JSON file."""
-        data = self._load_messages()
-        messages = [Message.from_dict(msg) for msg in data]
-        # Filter out expired messages
-        return [msg for msg in messages if not msg.is_expired()]
-
-    def add_message(self, message: Message) -> None:
-        """Add a message to the JSON file."""
-        messages = self._load_messages()
-        messages.insert(0, message.to_dict())
-        self._save_messages(messages)
-
-    def delete_message(self, message_id: str) -> bool:
-        """Delete a message from the JSON file."""
-        messages = self._load_messages()
-        filtered = [msg for msg in messages if msg['id'] != message_id]
-
-        if len(filtered) == len(messages):
-            return False
-
-        self._save_messages(filtered)
-        return True
-
-
 def get_database() -> DatabaseInterface:
-    """
-    Factory function to get the appropriate database implementation.
-
-    Returns:
-        PostgresDatabase if DATABASE_URL is set, otherwise JSONDatabase
-    """
-    if Config.use_postgres():
-        db = PostgresDatabase()
-    else:
-        db = JSONDatabase()
-
+    """Return the Postgres database implementation (requires DATABASE_URL)."""
+    if not Config.DATABASE_URL:
+        raise RuntimeError("DATABASE_URL is not set. Messages DB requires PostgreSQL.")
+    db = PostgresDatabase()
     db.initialize()
     return db

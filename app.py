@@ -1,6 +1,6 @@
 """
 Grandad Reminders - A simple reminder display system.
-Flask application with PostgreSQL/JSON storage support.
+Phase 1: Per-user boards backed by PostgreSQL sessions/user identity.
 """
 from flask import Flask, jsonify, request, send_from_directory
 import random
@@ -8,6 +8,8 @@ import string
 import traceback
 from datetime import datetime, timedelta, timezone
 from openai import OpenAI
+from psycopg import connect
+from psycopg.rows import dict_row
 
 from config import Config
 from database import get_database
@@ -49,7 +51,10 @@ class ReminderApp:
     def get_messages(self):
         """GET /api/messages - Retrieve all messages."""
         try:
-            messages = self.db.get_all_messages()
+            user_id = self._current_user_id()
+            if not user_id:
+                return jsonify({'error': 'Unauthorized'}), 401
+            messages = self.db.get_messages_for_user(user_id)
             return jsonify([msg.to_dict() for msg in messages]), 200
         except Exception as e:
             print(f"Error in get_messages: {e}")
@@ -58,6 +63,10 @@ class ReminderApp:
     def add_message(self):
         """POST /api/messages - Add a new message."""
         try:
+            user_id = self._current_user_id()
+            if not user_id:
+                return jsonify({'error': 'Unauthorized'}), 401
+
             data = request.get_json()
             text = data.get('text', '').strip()
             expiry_duration_minutes = data.get('expiry_duration_minutes')
@@ -78,7 +87,7 @@ class ReminderApp:
                 expiry_time=expiry_time
             )
 
-            self.db.add_message(message)
+            self.db.add_message_for_user(message, user_id)
             return jsonify(message.to_dict()), 201
 
         except Exception as e:
@@ -89,7 +98,11 @@ class ReminderApp:
     def delete_message(self, message_id: str):
         """DELETE /api/messages/<id> - Delete a message by ID."""
         try:
-            deleted = self.db.delete_message(message_id)
+            user_id = self._current_user_id()
+            if not user_id:
+                return jsonify({'error': 'Unauthorized'}), 401
+
+            deleted = self.db.delete_message_for_user(message_id, user_id)
 
             if not deleted:
                 return jsonify({'error': 'Message not found'}), 404
@@ -172,6 +185,37 @@ class ReminderApp:
             port=Config.PORT,
             debug=Config.DEBUG
         )
+
+    # --- helpers ---
+    @staticmethod
+    def _current_user_id() -> int | None:
+        """Resolve current user id from session_token cookie using DB sessions.
+
+        Returns None if not found or expired. Deletes expired session.
+        """
+        token = request.cookies.get('session_token')
+        if not token or not Config.DATABASE_URL:
+            return None
+        try:
+            with connect(Config.DATABASE_URL, row_factory=dict_row) as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "SELECT user_id, expires_at FROM sessions WHERE session_token = %s",
+                        (token,),
+                    )
+                    row = cur.fetchone()
+                    if not row:
+                        return None
+                    expires_at = row['expires_at']
+                    now = datetime.now(timezone.utc)
+                    if expires_at and now > expires_at:
+                        # purge expired token
+                        cur.execute("DELETE FROM sessions WHERE session_token = %s", (token,))
+                        conn.commit()
+                        return None
+                    return int(row['user_id'])
+        except Exception:
+            return None
 
 
 def create_app() -> Flask:
