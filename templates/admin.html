@@ -172,7 +172,13 @@
 </head>
 <body>
     <div class="container">
-        <h1>📝 Manage Grandad's Reminders</h1>
+        <div style="display:flex; justify-content: space-between; align-items: center; gap: 12px;">
+            <h1 style="margin: 0;">📝 Manage Grandad's Reminders</h1>
+            <a href="/auth/logout" style="text-decoration: none;">
+                <button type="button" title="Log out and return to login" style="background: linear-gradient(45deg, #6c757d, #495057);">🚪 Logout</button>
+            </a>
+        </div>
+        
         
         <div class="form-group">
             <label for="messageText">Original Message:</label>

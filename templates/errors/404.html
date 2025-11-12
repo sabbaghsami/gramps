@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>404 - Page Not Found</title>
+    <style>
+        * { box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0; padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh; display: flex;
+            align-items: center; justify-content: center;
+        }
+        .container {
+            background-color: white; padding: 60px 40px;
+            border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            max-width: 600px; width: 100%; text-align: center;
+        }
+        .error-code {
+            font-size: 120px; font-weight: 700;
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+            background-clip: text; margin: 0; line-height: 1;
+        }
+        h1 {
+            color: #2c3e50; margin: 20px 0 15px;
+            font-size: 2rem;
+        }
+        p { color: #666; margin-bottom: 30px; line-height: 1.6; }
+        .btn {
+            display: inline-block;
+            background: linear-gradient(45deg, #667eea, #764ba2);
+            color: white; padding: 15px 30px;
+            text-decoration: none; border-radius: 8px;
+            font-size: 16px; font-weight: 600;
+            transition: all 0.3s ease; margin: 5px;
+        }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4); }
+        .btn-secondary {
+            background: linear-gradient(45deg, #95a5a6, #7f8c8d);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="error-code">404</div>
+        <h1>Page Not Found</h1>
+        <p>Oops! The page you're looking for doesn't exist. It might have been moved or deleted.</p>
+        <div>
+            <a href="/" class="btn">Go to Display</a>
+            <a href="/admin" class="btn btn-secondary">Go to Admin</a>
+        </div>
+    </div>
+</body>
+</html>

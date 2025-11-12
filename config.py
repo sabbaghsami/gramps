@@ -18,10 +18,24 @@ class Config:
 
     # Database settings
     DATABASE_URL = os.environ.get('DATABASE_URL')
-    JSON_DATA_FILE = 'messages.json'
+    JSON_DATA_FILE = 'data/messages.json'
+    AUTH_DB_PATH = 'data/auth.db'
+
+    # Flask settings
+    SECRET_KEY = os.environ.get('SECRET_KEY', 'dev-secret-key-change-in-production')
+    TEMPLATES_FOLDER = 'templates'
+    STATIC_FOLDER = 'static'
 
     # OpenAI settings
     OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY')
+
+    # Email settings
+    SMTP_SERVER = os.environ.get('SMTP_SERVER', 'smtp.gmail.com')
+    SMTP_PORT = int(os.environ.get('SMTP_PORT', 587))
+    SMTP_USERNAME = os.environ.get('SMTP_USERNAME', '')
+    SMTP_PASSWORD = os.environ.get('SMTP_PASSWORD', '')
+    SENDER_EMAIL = os.environ.get('SENDER_EMAIL', '')
+    BASE_URL = os.environ.get('BASE_URL', 'http://localhost:3000')
 
     # Database table and column names
     TABLE_NAME = 'messages'
