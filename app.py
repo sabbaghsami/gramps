@@ -2,7 +2,7 @@
 Grandad Reminders - A simple reminder display system.
 Flask application with PostgreSQL/JSON storage support.
 """
-from flask import Flask, jsonify, request, send_from_directory
+from flask import Flask, jsonify, request, render_template
 import random
 import string
 import traceback
@@ -12,14 +12,29 @@ from openai import OpenAI
 from config import Config
 from database import get_database
 from models import Message
+from auth.routes import auth_bp
+from auth.middleware import login_required
+from error_handlers import register_error_handlers
 
 
 class ReminderApp:
     """Main application class for the reminder system."""
 
     def __init__(self):
-        self.app = Flask(__name__, static_folder='.')
+        self.app = Flask(
+            __name__,
+            template_folder=Config.TEMPLATES_FOLDER,
+            static_folder=Config.STATIC_FOLDER
+        )
+        self.app.config['SECRET_KEY'] = Config.SECRET_KEY
         self.db = get_database()
+
+        # Register authentication blueprint
+        self.app.register_blueprint(auth_bp)
+
+        # Register error handlers
+        register_error_handlers(self.app)
+
         self._register_routes()
 
     def _register_routes(self) -> None:
@@ -38,14 +53,17 @@ class ReminderApp:
         random_str = ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
         return f"{timestamp:x}{random_str}"
 
+    @login_required
     def index(self):
         """Serve the display page."""
-        return send_from_directory('.', 'display.html')
+        return render_template('display.html')
 
+    @login_required
     def admin(self):
         """Serve the admin page."""
-        return send_from_directory('.', 'admin.html')
+        return render_template('admin.html')
 
+    @login_required
     def get_messages(self):
         """GET /api/messages - Retrieve all messages."""
         try:
@@ -55,6 +73,7 @@ class ReminderApp:
             print(f"Error in get_messages: {e}")
             return jsonify({'error': 'Failed to load messages'}), 500
 
+    @login_required
     def add_message(self):
         """POST /api/messages - Add a new message."""
         try:
@@ -86,6 +105,7 @@ class ReminderApp:
             traceback.print_exc()
             return jsonify({'error': f'Failed to save message: {str(e)}'}), 500
 
+    @login_required
     def delete_message(self, message_id: str):
         """DELETE /api/messages/<id> - Delete a message by ID."""
         try:
@@ -100,6 +120,7 @@ class ReminderApp:
             print(f"Error in delete_message: {e}")
             return jsonify({'error': 'Failed to delete message'}), 500
 
+    @login_required
     def translate(self):
         """POST /api/translate - Translate text using OpenAI API."""
         try:
