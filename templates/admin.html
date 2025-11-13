@@ -10,23 +10,44 @@
 </head>
 <body>
     <div class="container">
-        <div style="display:flex; justify-content: space-between; align-items: center; gap: 12px;">
-            <div style="display:flex; align-items:center; gap:12px;">
+        <div class="header-container">
+            <div class="header-left">
                 <h1 style="margin: 0;">📝 Manage Reminders</h1>
-                <div>
-                    <label for="boardContext" style="font-size: 14px; color: #555; font-weight: normal;">Board:</label>
-                    <select id="boardContext" style="padding:8px 12px; border:2px solid #e1e5e9; border-radius: 8px;">
+                <div class="board-selector-wrapper">
+                    <label for="boardContext" class="board-label">Board:</label>
+                    <select id="boardContext" class="board-select">
                         <option value="personal">My Board</option>
                     </select>
-                    <button id="newWorkspaceBtn" type="button" style="margin-left:8px; background: linear-gradient(45deg, #10b981, #059669);">＋ New Shared Board</button>
-                    <button id="inviteBtn" type="button" style="margin-left:8px; background: linear-gradient(45deg, #3b82f6, #2563eb);">✉ Invite</button>
                 </div>
             </div>
-            <div style="display:flex; align-items:center; gap:10px;">
-                <div style="font-size:14px; color:#555;">Signed in as <strong>{{ current_username }}</strong></div>
-                <a href="/auth/logout" style="text-decoration: none;">
-                    <button type="button" title="Log out and return to login" style="background: linear-gradient(45deg, #6c757d, #495057);">🚪 Logout</button>
-                </a>
+            <div class="header-right">
+                <div class="user-info">
+                    <span class="username-display">{{ current_email }}</span>
+                </div>
+                <div class="menu-dropdown">
+                    <button type="button" class="menu-toggle" id="menuToggle">
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="12" cy="12" r="1"></circle>
+                            <circle cx="12" cy="5" r="1"></circle>
+                            <circle cx="12" cy="19" r="1"></circle>
+                        </svg>
+                    </button>
+                    <div class="dropdown-menu" id="dropdownMenu">
+                        <button type="button" class="dropdown-item" id="newWorkspaceBtn">
+                            <span class="item-icon">＋</span>
+                            <span>New Shared Board</span>
+                        </button>
+                        <button type="button" class="dropdown-item" id="inviteBtn">
+                            <span class="item-icon">✉</span>
+                            <span>Invite User</span>
+                        </button>
+                        <div class="dropdown-divider"></div>
+                        <a href="/auth/logout" class="dropdown-item logout-item">
+                            <span class="item-icon">🚪</span>
+                            <span>Logout</span>
+                        </a>
+                    </div>
+                </div>
             </div>
         </div>
 
@@ -91,6 +112,57 @@
         <div class="messages-list">
             <h2>Current Messages:</h2>
             <div id="messagesList">Loading...</div>
+        </div>
+    </div>
+
+    <!-- Custom Modals -->
+    <div id="modalOverlay" class="modal-overlay">
+        <!-- New Workspace Modal -->
+        <div id="newWorkspaceModal" class="modal modal-large">
+            <div class="modal-header">
+                <h3>Create New Shared Board</h3>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="modalError" class="modal-error"></div>
+
+                <div class="form-section">
+                    <label for="workspaceName">Board Name:</label>
+                    <input type="text" id="workspaceName" placeholder="Enter board name..." class="modal-input">
+                </div>
+
+                <div class="form-section">
+                    <label for="inviteEmailInput">Invite People (Optional):</label>
+                    <div class="email-input-group">
+                        <input type="email" id="inviteEmailInput" placeholder="Enter email address..." class="modal-input">
+                        <button type="button" class="add-email-btn" onclick="addEmailToList()">
+                            <span>+ Add</span>
+                        </button>
+                    </div>
+                    <div id="emailList" class="email-list"></div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn modal-btn-cancel" onclick="closeModal()">Cancel</button>
+                <button class="modal-btn modal-btn-primary" onclick="submitNewWorkspace()">Create Board</button>
+            </div>
+        </div>
+
+        <!-- Invite User Modal -->
+        <div id="inviteModal" class="modal">
+            <div class="modal-header">
+                <h3>Invite User to Board</h3>
+                <button class="modal-close" onclick="closeModal()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div id="inviteModalError" class="modal-error"></div>
+                <label for="inviteEmail">Email Address:</label>
+                <input type="email" id="inviteEmail" placeholder="user@example.com" class="modal-input">
+            </div>
+            <div class="modal-footer">
+                <button class="modal-btn modal-btn-cancel" onclick="closeModal()">Cancel</button>
+                <button class="modal-btn modal-btn-primary" onclick="submitInvite()">Send Invite</button>
+            </div>
         </div>
     </div>
 

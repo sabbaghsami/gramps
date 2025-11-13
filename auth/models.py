@@ -14,7 +14,6 @@ class User:
     """User model for authentication."""
 
     id: Optional[int]
-    username: str
     email: str
     password_hash: str
     email_verified: bool = False
@@ -87,7 +86,6 @@ class User:
         """Convert user to dictionary (without sensitive data)."""
         return {
             'id': self.id,
-            'username': self.username,
             'email': self.email,
             'email_verified': self.email_verified,
             'created_at': self.created_at.isoformat() if self.created_at else None

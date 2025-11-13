@@ -16,7 +16,7 @@ def main():
     else:
         print("⚠️ DATABASE_URL not set. The auth module requires PostgreSQL.")
     print("\nTables created:")
-    print("  - users (id, username, email, password_hash, email_verified, etc.)")
+    print("  - users (id, email, password_hash, email_verified, etc.)")
     print("  - sessions (id, user_id, session_token, expires_at, remember_me)")
     print("\n✨ You can now start the application and create user accounts!")
 

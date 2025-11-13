@@ -31,18 +31,13 @@ def signup_page():
 def signup():
     """Handle user signup."""
     try:
-        username = request.form.get('username', '').strip()
         email = request.form.get('email', '').strip().lower()
         password = request.form.get('password', '')
         confirm_password = request.form.get('confirm_password', '')
 
         # Validation
-        if not username or not email or not password:
+        if not email or not password:
             flash('All fields are required', 'error')
-            return redirect(url_for('auth.signup_page'))
-
-        if len(username) < 3:
-            flash('Username must be at least 3 characters long', 'error')
             return redirect(url_for('auth.signup_page'))
 
         if not User.validate_email(email):
@@ -63,23 +58,18 @@ def signup():
             flash('Email already registered', 'error')
             return redirect(url_for('auth.signup_page'))
 
-        if auth_db.get_user_by_username(username):
-            flash('Username already taken', 'error')
-            return redirect(url_for('auth.signup_page'))
-
         # Create user
         password_hash = User.hash_password(password)
         verification_token = User.generate_token()
 
         user = auth_db.create_user(
-            username=username,
             email=email,
             password_hash=password_hash,
             verification_token=verification_token
         )
 
         # Send verification email
-        email_sent = email_service.send_verification_email(email, username, verification_token)
+        email_sent = email_service.send_verification_email(email, verification_token)
 
         if email_sent:
             flash('Account created! Please check your email to verify your account.', 'success')
@@ -127,21 +117,19 @@ def login_page():
 def login():
     """Handle user login."""
     try:
-        email_or_username = request.form.get('email', '').strip().lower()
+        email = request.form.get('email', '').strip().lower()
         password = request.form.get('password', '')
         remember_me = request.form.get('remember_me') == 'on'
 
-        if not email_or_username or not password:
+        if not email or not password:
             flash('Email and password are required', 'error')
             return redirect(url_for('auth.login_page'))
 
-        # Try to find user by email or username
-        user = auth_db.get_user_by_email(email_or_username)
-        if not user:
-            user = auth_db.get_user_by_username(email_or_username)
+        # Find user by email
+        user = auth_db.get_user_by_email(email)
 
         if not user or not User.verify_password(password, user.password_hash):
-            flash('Invalid email/username or password', 'error')
+            flash('Invalid email or password', 'error')
             return redirect(url_for('auth.login_page'))
 
         if not user.email_verified:
@@ -175,7 +163,7 @@ def login():
             samesite='Lax'
         )
 
-        flash(f'Welcome back, {user.username}!', 'success')
+        flash(f'Welcome back!', 'success')
         return response
 
     except Exception as e:
@@ -220,7 +208,7 @@ def forgot_password():
             expires_at = datetime.now(timezone.utc) + timedelta(hours=1)
 
             auth_db.set_reset_token(user.id, reset_token, expires_at)
-            email_service.send_password_reset_email(email, user.username, reset_token)
+            email_service.send_password_reset_email(email, reset_token)
 
         flash('If an account exists with that email, a password reset link has been sent.', 'info')
         return redirect(url_for('auth.login_page'))

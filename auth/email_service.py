@@ -5,6 +5,7 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import Optional
+import os
 
 from config import Config
 
@@ -18,6 +19,31 @@ class EmailService:
         self.smtp_username = Config.SMTP_USERNAME
         self.smtp_password = Config.SMTP_PASSWORD
         self.sender_email = Config.SENDER_EMAIL
+        # Point to templates/email at project root
+        project_root = os.path.dirname(os.path.dirname(__file__))
+        self.templates_dir = os.path.join(project_root, 'templates', 'email')
+
+    def _load_template(self, template_name: str) -> str:
+        """Load a template file from the templates directory."""
+        template_path = os.path.join(self.templates_dir, template_name)
+        with open(template_path, 'r', encoding='utf-8') as f:
+            return f.read()
+
+    def _render_email(self, content: str, **variables) -> str:
+        """Render an email by combining base template, CSS, and content with variables."""
+        # Load base template and CSS
+        base_template = self._load_template('base_email.html')
+        styles = self._load_template('email_styles.css')
+
+        # Replace variables in content
+        for key, value in variables.items():
+            content = content.replace(f'{{{{ {key} }}}}', str(value))
+
+        # Combine everything
+        html = base_template.replace('{{ styles }}', styles)
+        html = html.replace('{{ content }}', content)
+
+        return html
 
     def send_email(self, to_email: str, subject: str, html_body: str) -> bool:
         """Send an email via SMTP."""
@@ -40,207 +66,40 @@ class EmailService:
             print(f"Error sending email: {e}")
             return False
 
-    def send_verification_email(self, to_email: str, username: str, verification_token: str) -> bool:
+    def send_verification_email(self, to_email: str, verification_token: str) -> bool:
         """Send email verification email."""
         verification_url = f"{Config.BASE_URL}/auth/verify/{verification_token}"
 
         subject = "Verify Your Email - Grandad Reminders"
-        html_body = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <style>
-                body {{
-                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                    background-color: #f4f4f4;
-                    padding: 20px;
-                }}
-                .container {{
-                    max-width: 600px;
-                    margin: 0 auto;
-                    background: white;
-                    padding: 40px;
-                    border-radius: 10px;
-                    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-                }}
-                .header {{
-                    text-align: center;
-                    color: #667eea;
-                    margin-bottom: 30px;
-                }}
-                .button {{
-                    display: inline-block;
-                    background: linear-gradient(45deg, #667eea, #764ba2);
-                    color: white;
-                    padding: 15px 30px;
-                    text-decoration: none;
-                    border-radius: 5px;
-                    margin: 20px 0;
-                }}
-                .footer {{
-                    margin-top: 30px;
-                    text-align: center;
-                    color: #666;
-                    font-size: 12px;
-                }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <h1 class="header">Welcome to Grandad Reminders!</h1>
-                <p>Hi {username},</p>
-                <p>Thank you for signing up! Please verify your email address to activate your account.</p>
-                <p style="text-align: center;">
-                    <a href="{verification_url}" class="button">Verify Email Address</a>
-                </p>
-                <p>Or copy and paste this link into your browser:</p>
-                <p style="word-break: break-all; color: #667eea;">{verification_url}</p>
-                <p>This link will expire in 24 hours.</p>
-                <div class="footer">
-                    <p>If you didn't create an account, you can safely ignore this email.</p>
-                    <p>&copy; 2025 Grandad Reminders</p>
-                </div>
-            </div>
-        </body>
-        </html>
-        """
+        content = self._load_template('verification_email.html')
+        html_body = self._render_email(
+            content,
+            verification_url=verification_url
+        )
 
         return self.send_email(to_email, subject, html_body)
 
-    def send_password_reset_email(self, to_email: str, username: str, reset_token: str) -> bool:
+    def send_password_reset_email(self, to_email: str, reset_token: str) -> bool:
         """Send password reset email."""
         reset_url = f"{Config.BASE_URL}/auth/reset-password/{reset_token}"
 
         subject = "Reset Your Password - Grandad Reminders"
-        html_body = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <style>
-                body {{
-                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                    background-color: #f4f4f4;
-                    padding: 20px;
-                }}
-                .container {{
-                    max-width: 600px;
-                    margin: 0 auto;
-                    background: white;
-                    padding: 40px;
-                    border-radius: 10px;
-                    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-                }}
-                .header {{
-                    text-align: center;
-                    color: #667eea;
-                    margin-bottom: 30px;
-                }}
-                .button {{
-                    display: inline-block;
-                    background: linear-gradient(45deg, #667eea, #764ba2);
-                    color: white;
-                    padding: 15px 30px;
-                    text-decoration: none;
-                    border-radius: 5px;
-                    margin: 20px 0;
-                }}
-                .warning {{
-                    background-color: #fff3cd;
-                    border-left: 4px solid #ffc107;
-                    padding: 15px;
-                    margin: 20px 0;
-                }}
-                .footer {{
-                    margin-top: 30px;
-                    text-align: center;
-                    color: #666;
-                    font-size: 12px;
-                }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <h1 class="header">Password Reset Request</h1>
-                <p>Hi {username},</p>
-                <p>We received a request to reset your password for your Grandad Reminders account.</p>
-                <p style="text-align: center;">
-                    <a href="{reset_url}" class="button">Reset Password</a>
-                </p>
-                <p>Or copy and paste this link into your browser:</p>
-                <p style="word-break: break-all; color: #667eea;">{reset_url}</p>
-                <div class="warning">
-                    <strong>⚠️ Security Notice:</strong> This link will expire in 1 hour for your security.
-                </div>
-                <div class="footer">
-                    <p>If you didn't request a password reset, please ignore this email and your password will remain unchanged.</p>
-                    <p>&copy; 2025 Grandad Reminders</p>
-                </div>
-            </div>
-        </body>
-        </html>
-        """
+        content = self._load_template('password_reset_email.html')
+        html_body = self._render_email(
+            content,
+            reset_url=reset_url
+        )
 
         return self.send_email(to_email, subject, html_body)
 
     def send_workspace_invite_email(self, to_email: str, inviter_name: str, workspace_name: str, join_url: str) -> bool:
         """Send a workspace invite email with a join link."""
         subject = f"You're invited to a shared board: {workspace_name}"
-        html_body = f"""
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <style>
-                body {{
-                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                    background-color: #f4f4f4;
-                    padding: 20px;
-                }}
-                .container {{
-                    max-width: 600px;
-                    margin: 0 auto;
-                    background: white;
-                    padding: 40px;
-                    border-radius: 10px;
-                    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-                }}
-                .header {{
-                    text-align: center;
-                    color: #667eea;
-                    margin-bottom: 30px;
-                }}
-                .button {{
-                    display: inline-block;
-                    background: linear-gradient(45deg, #667eea, #764ba2);
-                    color: white;
-                    padding: 15px 30px;
-                    text-decoration: none;
-                    border-radius: 5px;
-                    margin: 20px 0;
-                }}
-                .footer {{
-                    margin-top: 30px;
-                    text-align: center;
-                    color: #666;
-                    font-size: 12px;
-                }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <h1 class="header">Shared Board Invitation</h1>
-                <p>Hi,</p>
-                <p><strong>{inviter_name}</strong> invited you to collaborate on the shared board <strong>{workspace_name}</strong>.</p>
-                <p style="text-align: center;">
-                    <a href="{join_url}" class="button">Accept Invitation</a>
-                </p>
-                <p>Or copy and paste this link into your browser:</p>
-                <p style="word-break: break-all; color: #667eea;">{join_url}</p>
-                <div class="footer">
-                    <p>This invite will expire in 7 days.</p>
-                    <p>&copy; 2025 Grandad Reminders</p>
-                </div>
-            </div>
-        </body>
-        </html>
-        """
+        content = self._load_template('workspace_invite_email.html')
+        html_body = self._render_email(
+            content,
+            inviter_name=inviter_name,
+            workspace_name=workspace_name,
+            join_url=join_url
+        )
         return self.send_email(to_email, subject, html_body)

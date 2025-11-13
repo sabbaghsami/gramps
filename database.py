@@ -175,13 +175,25 @@ class PostgresDatabase(DatabaseInterface):
                             workspace_id INTEGER NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
                             inviter_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                             invitee_email TEXT,
-                            invitee_username TEXT,
                             token_hash TEXT NOT NULL UNIQUE,
                             expires_at TIMESTAMPTZ NOT NULL,
                             accepted_at TIMESTAMPTZ,
                             accepted_by_user_id INTEGER REFERENCES users(id),
                             created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
                         )
+                    ''')
+                    # Drop legacy column invitee_username if present
+                    cur.execute('''
+                        DO $$
+                        BEGIN
+                            IF EXISTS (
+                                SELECT 1 FROM information_schema.columns
+                                 WHERE table_name = 'workspace_invites'
+                                   AND column_name = 'invitee_username'
+                            ) THEN
+                                ALTER TABLE workspace_invites DROP COLUMN invitee_username;
+                            END IF;
+                        END $$;
                     ''')
 
                     conn.commit()
@@ -375,7 +387,7 @@ class PostgresDatabase(DatabaseInterface):
                 return dict(row) if row else None
 
     def create_workspace_invite(self, workspace_id: int, inviter_user_id: int,
-                                 invitee_email: Optional[str], invitee_username: Optional[str],
+                                 invitee_email: Optional[str],
                                  expires_days: int = 7) -> dict:
         token = secrets.token_urlsafe(32)
         token_hash = self._hash_token(token)
@@ -384,10 +396,10 @@ class PostgresDatabase(DatabaseInterface):
             with conn.cursor() as cur:
                 cur.execute(
                     '''INSERT INTO workspace_invites
-                       (workspace_id, inviter_user_id, invitee_email, invitee_username, token_hash, expires_at)
-                       VALUES (%s, %s, %s, %s, %s, %s)
+                       (workspace_id, inviter_user_id, invitee_email, token_hash, expires_at)
+                       VALUES (%s, %s, %s, %s, %s)
                        RETURNING id''',
-                    (workspace_id, inviter_user_id, invitee_email, invitee_username, token_hash, expires_at)
+                    (workspace_id, inviter_user_id, invitee_email, token_hash, expires_at)
                 )
                 invite_id = cur.fetchone()['id']
                 conn.commit()

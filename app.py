@@ -73,7 +73,7 @@ class ReminderApp:
     def admin(self):
         """Serve the admin page."""
         user = get_current_user()
-        return render_template('admin.html', current_username=(user.username if user else ''))
+        return render_template('admin.html', current_email=(user.email if user else ''))
 
     @login_required
     def get_messages(self):
@@ -215,16 +215,19 @@ class ReminderApp:
             return jsonify({'error': 'Forbidden'}), 403
         data = request.get_json() or {}
         email = (data.get('email') or '').strip().lower()
-        username = (data.get('username') or '').strip() or None
-        if not email and not username:
-            return jsonify({'error': 'Provide email or username'}), 400
-        invite = self.db.create_workspace_invite(workspace_id, user_id, email if email else None, username)
+        if not email:
+            return jsonify({'error': 'Email is required'}), 400
+        # Require that the invitee already has an account
+        invitee = self._find_user_by_email(email)
+        if not invitee:
+            return jsonify({'error': 'No user exists with that email'}), 400
+        invite = self.db.create_workspace_invite(workspace_id, user_id, email)
         # Email
         join_url = f"{Config.BASE_URL}/workspaces/join/{invite['token']}"
         ws = self.db.get_workspace(workspace_id)
         inviter = self._get_user_profile(user_id)
         if email:
-            EmailService().send_workspace_invite_email(email, inviter['username'], ws['name'], join_url)
+            EmailService().send_workspace_invite_email(email, inviter['email'], ws['name'], join_url)
         return jsonify({'success': True, 'join_url': join_url if not email else None}), 201
 
     def join_workspace(self, token: str):
@@ -350,7 +353,18 @@ class ReminderApp:
         try:
             with connect(Config.DATABASE_URL, row_factory=dict_row) as conn:
                 with conn.cursor() as cur:
-                    cur.execute("SELECT id, username, email FROM users WHERE id = %s", (user_id,))
+                    cur.execute("SELECT id, email FROM users WHERE id = %s", (user_id,))
+                    row = cur.fetchone()
+                    return dict(row) if row else None
+        except Exception:
+            return None
+
+    @staticmethod
+    def _find_user_by_email(email: str) -> dict | None:
+        try:
+            with connect(Config.DATABASE_URL, row_factory=dict_row) as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT id, email FROM users WHERE lower(email) = lower(%s)", (email,))
                     row = cur.fetchone()
                     return dict(row) if row else None
         except Exception:

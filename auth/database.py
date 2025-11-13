@@ -21,15 +21,13 @@ class AuthDatabaseInterface(ABC):
     def initialize(self) -> None: ...
 
     @abstractmethod
-    def create_user(self, username: str, email: str, password_hash: str,
+    def create_user(self, email: str, password_hash: str,
                     verification_token: Optional[str] = None) -> User: ...
 
     @abstractmethod
     def get_user_by_email(self, email: str) -> Optional[User]: ...
 
     @abstractmethod
-    def get_user_by_username(self, username: str) -> Optional[User]: ...
-
     @abstractmethod
     def get_user_by_id(self, user_id: int) -> Optional[User]: ...
 
@@ -106,7 +104,6 @@ class PostgresAuthDatabase(AuthDatabaseInterface):
     def _row_to_user(row) -> User:
         return User(
             id=row["id"],
-            username=row["username"],
             email=row["email"],
             password_hash=row["password_hash"],
             email_verified=bool(row["email_verified"]),
@@ -126,7 +123,6 @@ class PostgresAuthDatabase(AuthDatabaseInterface):
                         '''
                         CREATE TABLE IF NOT EXISTS users (
                             id SERIAL PRIMARY KEY,
-                            username VARCHAR(255) UNIQUE NOT NULL,
                             email VARCHAR(255) UNIQUE NOT NULL,
                             password_hash TEXT NOT NULL,
                             email_verified BOOLEAN DEFAULT FALSE,
@@ -151,8 +147,12 @@ class PostgresAuthDatabase(AuthDatabaseInterface):
                         '''
                     )
                     cur.execute('CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)')
-                    cur.execute('CREATE INDEX IF NOT EXISTS idx_users_username ON users(username)')
                     cur.execute('CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(session_token)')
+                    # Drop legacy username index if it exists
+                    try:
+                        cur.execute('DROP INDEX IF EXISTS idx_users_username')
+                    except Exception:
+                        pass
                 conn.commit()
             print("✅ PostgreSQL authentication database initialized")
         except Exception as e:
@@ -160,22 +160,21 @@ class PostgresAuthDatabase(AuthDatabaseInterface):
             traceback.print_exc()
 
     # --- users
-    def create_user(self, username: str, email: str, password_hash: str,
+    def create_user(self, email: str, password_hash: str,
                     verification_token: Optional[str] = None) -> User:
         with self._conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     '''
-                    INSERT INTO users (username, email, password_hash, verification_token, created_at)
-                    VALUES (%s, %s, %s, %s, NOW())
+                    INSERT INTO users (email, password_hash, verification_token, created_at)
+                    VALUES (%s, %s, %s, NOW())
                     RETURNING id, created_at
-                    ''', (username, email, password_hash, verification_token)
+                    ''', (email, password_hash, verification_token)
                 )
                 row = cur.fetchone()
                 conn.commit()
                 return User(
                     id=row["id"],
-                    username=username,
                     email=email,
                     password_hash=password_hash,
                     verification_token=verification_token,
@@ -188,9 +187,6 @@ class PostgresAuthDatabase(AuthDatabaseInterface):
 
     def get_user_by_email(self, email: str) -> Optional[User]:
         return self._get_user_by("email", email)
-
-    def get_user_by_username(self, username: str) -> Optional[User]:
-        return self._get_user_by("username", username)
 
     def get_user_by_id(self, user_id: int) -> Optional[User]:
         return self._get_user_by("id", user_id)
@@ -244,7 +240,7 @@ class PostgresAuthDatabase(AuthDatabaseInterface):
               s.expires_at AS s_expires_at,
               s.remember_me AS s_remember_me,
               s.created_at AS s_created_at,
-              u.id AS u_id, u.username, u.email, u.password_hash, u.email_verified,
+              u.id AS u_id, u.email, u.password_hash, u.email_verified,
               u.verification_token, u.reset_token, u.reset_token_expires,
               u.created_at AS u_created_at, u.remember_token
             FROM sessions s
@@ -262,7 +258,6 @@ class PostgresAuthDatabase(AuthDatabaseInterface):
 
         user = User(
             id=row["u_id"],
-            username=row["username"],
             email=row["email"],
             password_hash=row["password_hash"],
             email_verified=bool(row["email_verified"]),
@@ -298,4 +293,3 @@ def get_auth_database() -> AuthDatabaseInterface:
 
 # Legacy callable for backwards compatibility
 AuthDatabase = get_auth_database
-

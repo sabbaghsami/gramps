@@ -150,17 +150,219 @@ document.getElementById('boardContext').addEventListener('change', e => {
     loadMessages();
 });
 
-document.getElementById('newWorkspaceBtn').addEventListener('click', async () => {
-    const name = prompt('Name for the new shared board:');
-    if (!name) return;
+// Email list management
+let pendingInvites = [];
+
+function showModalError(message) {
+    const errorEl = document.getElementById('modalError');
+    errorEl.textContent = message;
+    errorEl.classList.add('show');
+
+    // Auto-hide after 3 seconds
+    setTimeout(() => {
+        errorEl.classList.remove('show');
+    }, 3000);
+}
+
+function hideModalError() {
+    const errorEl = document.getElementById('modalError');
+    errorEl.classList.remove('show');
+}
+
+// Inline error for the single Invite modal
+function showInviteModalError(message) {
+    const el = document.getElementById('inviteModalError');
+    if (!el) return;
+    el.textContent = message;
+    el.classList.add('show');
+}
+
+function hideInviteModalError() {
+    const el = document.getElementById('inviteModalError');
+    if (!el) return;
+    el.classList.remove('show');
+}
+
+function addEmailToList() {
+    const emailInput = document.getElementById('inviteEmailInput');
+    const email = emailInput.value.trim().toLowerCase();
+
+    // Validate email
+    if (!email) {
+        showModalError('Please enter an email address');
+        return;
+    }
+
+    // Basic email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+        showModalError('Please enter a valid email address');
+        return;
+    }
+
+    // Check for duplicates
+    if (pendingInvites.includes(email)) {
+        showModalError('Email already added');
+        return;
+    }
+
+    // Add to list
+    pendingInvites.push(email);
+    emailInput.value = '';
+    hideModalError();
+    renderEmailList();
+}
+
+function removeEmail(email) {
+    pendingInvites = pendingInvites.filter(e => e !== email);
+    renderEmailList();
+}
+
+function renderEmailList() {
+    const emailList = document.getElementById('emailList');
+
+    if (pendingInvites.length === 0) {
+        emailList.innerHTML = '<div class="email-list-empty">No emails added yet</div>';
+        return;
+    }
+
+    emailList.innerHTML = pendingInvites.map(email => `
+        <div class="email-chip">
+            <span class="email-chip-text">${email}</span>
+            <button class="email-chip-remove" onclick="removeEmail('${email}')" type="button">
+                ×
+            </button>
+        </div>
+    `).join('');
+}
+
+// Modal functions
+function openModal(modalId) {
+    const overlay = document.getElementById('modalOverlay');
+    const modal = document.getElementById(modalId);
+
+    // Hide all modals first
+    document.querySelectorAll('.modal').forEach(m => m.style.display = 'none');
+
+    // Show the requested modal
+    modal.style.display = 'block';
+    overlay.classList.add('show');
+
+    // Clear any previous errors
+    hideModalError();
+    hideInviteModalError();
+
+    // Initialize email list if opening workspace modal
+    if (modalId === 'newWorkspaceModal') {
+        renderEmailList();
+    }
+
+    // Focus the input field
+    setTimeout(() => {
+        const input = modal.querySelector('input');
+        if (input) input.focus();
+    }, 100);
+}
+
+function closeModal() {
+    const overlay = document.getElementById('modalOverlay');
+    overlay.classList.remove('show');
+
+    // Clear errors
+    hideModalError();
+
+    // Clear input fields and email list after animation
+    setTimeout(() => {
+        document.getElementById('workspaceName').value = '';
+        document.getElementById('inviteEmail').value = '';
+        document.getElementById('inviteEmailInput').value = '';
+        pendingInvites = [];
+        renderEmailList();
+    }, 300);
+}
+
+// Close modal on overlay click
+document.getElementById('modalOverlay').addEventListener('click', (e) => {
+    if (e.target.id === 'modalOverlay') {
+        closeModal();
+    }
+});
+
+// Close modal on Escape key
+document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+        closeModal();
+    }
+});
+
+// Submit new workspace
+async function submitNewWorkspace() {
+    const name = document.getElementById('workspaceName').value.trim();
+    if (!name) {
+        showModalError('Please enter a board name');
+        return;
+    }
+
     try {
+        // Create the workspace
         const res = await fetch('/api/workspaces', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ name })
         });
+
         if (res.ok) {
-            showStatus('Shared board created', 'success');
+            const workspace = await res.json();
+            const wsId = workspace.id;
+
+            // Send invites if there are any
+            if (pendingInvites.length > 0) {
+                let successCount = 0;
+                let failCount = 0;
+                const notRegistered = [];
+
+                for (const email of pendingInvites) {
+                    try {
+                        const inviteRes = await fetch(`/api/workspaces/${wsId}/invite`, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ email })
+                        });
+                        if (inviteRes.ok) {
+                            successCount++;
+                        } else {
+                            failCount++;
+                            const err = await inviteRes.json().catch(() => ({}));
+                            if (err && err.error && err.error.toLowerCase().includes('no user')) {
+                                notRegistered.push(email);
+                            }
+                        }
+                    } catch {
+                        failCount++;
+                    }
+                }
+
+                // If there are unregistered emails, keep modal open and show them inline
+                if (notRegistered.length > 0) {
+                    showModalError(`These emails are not registered: ${notRegistered.join(', ')}`);
+                    pendingInvites = notRegistered;
+                    renderEmailList();
+                } else {
+                    closeModal();
+                }
+                // Only show page toast if there were no failures
+                if (failCount === 0) {
+                    if (successCount > 0) {
+                        showStatus(`Board created and ${successCount} invite(s) sent!`, 'success');
+                    } else {
+                        showStatus('Shared board created', 'success');
+                    }
+                }
+            } else {
+                showStatus('Shared board created', 'success');
+                closeModal();
+            }
+
             await loadWorkspaces();
         } else {
             const err = await res.json();
@@ -169,13 +371,19 @@ document.getElementById('newWorkspaceBtn').addEventListener('click', async () =>
     } catch {
         showStatus('Error creating shared board', 'error');
     }
-});
+}
 
-document.getElementById('inviteBtn').addEventListener('click', async () => {
-    if (!currentContext.startsWith('workspace:'))
-        return showStatus('Switch to a shared board first', 'error');
-    const email = prompt('Enter the email to invite:');
-    if (!email) return;
+// Submit invite
+async function submitInvite() {
+    if (!currentContext.startsWith('workspace:')) {
+        showStatus('Switch to a shared board first', 'error');
+        closeModal();
+        return;
+    }
+
+    const email = document.getElementById('inviteEmail').value.trim();
+    if (!email) { showInviteModalError('Please enter an email address'); return; }
+
     const wsId = currentContext.split(':')[1];
     try {
         const res = await fetch(`/api/workspaces/${wsId}/invite`, {
@@ -183,13 +391,72 @@ document.getElementById('inviteBtn').addEventListener('click', async () => {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ email })
         });
-        if (res.ok) showStatus('Invite sent', 'success');
-        else {
-            const err = await res.json();
-            showStatus(err.error || 'Failed to send invite', 'error');
-        }
+        const data = await res.json().catch(() => ({}));
+        if (res.ok) { showStatus('Invite sent', 'success'); closeModal(); }
+        else { const msg = (data && (data.error || data.message)) || 'Failed to send invite'; showInviteModalError(msg); }
     } catch {
         showStatus('Error sending invite', 'error');
+    }
+}
+
+// Handle Enter key in modal inputs
+document.getElementById('workspaceName').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        // If focused on name, check if we should submit or focus email input
+        const emailInput = document.getElementById('inviteEmailInput');
+        if (emailInput && emailInput.offsetParent !== null) {
+            // Email section is visible, focus it
+            emailInput.focus();
+        } else {
+            submitNewWorkspace();
+        }
+    }
+});
+
+document.getElementById('inviteEmailInput').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') {
+        e.preventDefault();
+        addEmailToList();
+    }
+});
+
+document.getElementById('inviteEmail').addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') submitInvite();
+});
+
+document.getElementById('newWorkspaceBtn').addEventListener('click', () => {
+    openModal('newWorkspaceModal');
+});
+
+document.getElementById('inviteBtn').addEventListener('click', () => {
+    if (!currentContext.startsWith('workspace:')) {
+        showStatus('Switch to a shared board first', 'error');
+        return;
+    }
+    openModal('inviteModal');
+});
+
+// Dropdown menu toggle
+const menuToggle = document.getElementById('menuToggle');
+const dropdownMenu = document.getElementById('dropdownMenu');
+
+menuToggle.addEventListener('click', (e) => {
+    e.stopPropagation();
+    dropdownMenu.classList.toggle('show');
+});
+
+// Close dropdown when clicking outside
+document.addEventListener('click', (e) => {
+    if (!menuToggle.contains(e.target) && !dropdownMenu.contains(e.target)) {
+        dropdownMenu.classList.remove('show');
+    }
+});
+
+// Close dropdown when clicking a menu item
+dropdownMenu.addEventListener('click', (e) => {
+    if (e.target.closest('.dropdown-item')) {
+        dropdownMenu.classList.remove('show');
     }
 });
 
