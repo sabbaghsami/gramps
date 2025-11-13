@@ -8,10 +8,12 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from typing import Optional
-import traceback
+import logging
 
 from auth.models import User
 from config import Config
+
+logger = logging.getLogger(__name__)
 
 
 class AuthDatabaseInterface(ABC):
@@ -27,7 +29,6 @@ class AuthDatabaseInterface(ABC):
     @abstractmethod
     def get_user_by_email(self, email: str) -> Optional[User]: ...
 
-    @abstractmethod
     @abstractmethod
     def get_user_by_id(self, user_id: int) -> Optional[User]: ...
 
@@ -97,10 +98,6 @@ class PostgresAuthDatabase(AuthDatabaseInterface):
         return value if value is not None else None
 
     @staticmethod
-    def _u(boolish) -> bool:
-        return bool(boolish)
-
-    @staticmethod
     def _row_to_user(row) -> User:
         return User(
             id=row["id"],
@@ -154,10 +151,10 @@ class PostgresAuthDatabase(AuthDatabaseInterface):
                     except Exception:
                         pass
                 conn.commit()
-            print("✅ PostgreSQL authentication database initialized")
+            logger.info("PostgreSQL authentication database initialized")
         except Exception as e:
-            print(f"❌ Error initializing auth database: {e}")
-            traceback.print_exc()
+            logger.error(f"Error initializing auth database: {e}")
+            logger.exception("Traceback:")
 
     # --- users
     def create_user(self, email: str, password_hash: str,
@@ -289,7 +286,3 @@ def get_auth_database() -> AuthDatabaseInterface:
     db: AuthDatabaseInterface = PostgresAuthDatabase()
     db.initialize()
     return db
-
-
-# Legacy callable for backwards compatibility
-AuthDatabase = get_auth_database

@@ -1,17 +1,17 @@
 """
 Database interface for message storage (PostgreSQL-only, user-scoped).
-
-Phase 1: messages belong to a single owner (owner_user_id).
 """
 from abc import ABC, abstractmethod
 from typing import List, Optional
-import traceback
+import logging
 import secrets
 import hashlib
 from datetime import datetime, timedelta, timezone
 
 from config import Config
 from models import Message
+
+logger = logging.getLogger(__name__)
 
 
 class DatabaseInterface(ABC):
@@ -197,10 +197,10 @@ class PostgresDatabase(DatabaseInterface):
                     ''')
 
                     conn.commit()
-            print("✅ PostgreSQL database initialized")
+            logger.info("PostgreSQL database initialized")
         except Exception as e:
-            print(f"❌ Error initializing database: {e}")
-            traceback.print_exc()
+            logger.error(f"Error initializing database: {e}")
+            logger.exception("Traceback:")
 
     def get_messages_for_user(self, user_id: int) -> List[Message]:
         """Retrieve all non-expired messages for a specific user."""
@@ -226,7 +226,7 @@ class PostgresDatabase(DatabaseInterface):
                         for row in rows
                     ]
         except Exception as e:
-            print(f"Error loading messages: {e}")
+            logger.error(f"Error loading messages: {e}")
             return []
 
     def add_message_for_user(self, message: Message, owner_user_id: int) -> None:
@@ -241,7 +241,7 @@ class PostgresDatabase(DatabaseInterface):
                     )
                     conn.commit()
         except Exception as e:
-            print(f"Error saving message: {e}")
+            logger.error(f"Error saving message: {e}")
             raise
 
     def delete_message_for_user(self, message_id: str, owner_user_id: int) -> bool:
@@ -257,7 +257,7 @@ class PostgresDatabase(DatabaseInterface):
                     conn.commit()
                     return deleted > 0
         except Exception as e:
-            print(f"Error deleting message: {e}")
+            logger.error(f"Error deleting message: {e}")
             raise
 
     # -------- Workspaces --------
@@ -342,7 +342,7 @@ class PostgresDatabase(DatabaseInterface):
                         for row in rows
                     ]
         except Exception as e:
-            print(f"Error loading workspace messages: {e}")
+            logger.error(f"Error loading workspace messages: {e}")
             return []
 
     def add_message_to_workspace(self, message: Message, workspace_id: int) -> None:
@@ -356,7 +356,7 @@ class PostgresDatabase(DatabaseInterface):
                     )
                     conn.commit()
         except Exception as e:
-            print(f"Error saving workspace message: {e}")
+            logger.error(f"Error saving workspace message: {e}")
             raise
 
     def delete_message_in_workspace(self, message_id: str, workspace_id: int) -> bool:
@@ -371,7 +371,7 @@ class PostgresDatabase(DatabaseInterface):
                     conn.commit()
                     return deleted > 0
         except Exception as e:
-            print(f"Error deleting workspace message: {e}")
+            logger.error(f"Error deleting workspace message: {e}")
             raise
 
     # -------- Invites --------

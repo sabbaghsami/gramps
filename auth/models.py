@@ -65,17 +65,6 @@ class User:
         """Generate a secure random token."""
         return secrets.token_urlsafe(32)
 
-    def generate_verification_token(self) -> str:
-        """Generate email verification token."""
-        self.verification_token = self.generate_token()
-        return self.verification_token
-
-    def generate_reset_token(self, expires_in_hours: int = 1) -> str:
-        """Generate password reset token with expiration."""
-        self.reset_token = self.generate_token()
-        self.reset_token_expires = datetime.now(timezone.utc) + timedelta(hours=expires_in_hours)
-        return self.reset_token
-
     def is_reset_token_valid(self) -> bool:
         """Check if reset token is still valid."""
         if not self.reset_token or not self.reset_token_expires:

@@ -2,12 +2,15 @@
 Authentication routes for signup, login, verification, and password reset.
 """
 from datetime import datetime, timedelta, timezone
-from flask import Blueprint, request, render_template, redirect, url_for, flash, make_response, session
+import logging
+from flask import Blueprint, request, render_template, redirect, url_for, flash, make_response
 
 from auth.database import get_auth_database
 from auth.models import User
 from auth.email_service import EmailService
 from auth.middleware import logout_user, get_current_user
+
+logger = logging.getLogger(__name__)
 
 # Create Blueprint
 auth_bp = Blueprint('auth', __name__, url_prefix='/auth')
@@ -79,7 +82,7 @@ def signup():
         return redirect(url_for('auth.login_page'))
 
     except Exception as e:
-        print(f"Signup error: {e}")
+        logger.error(f"Signup error: {e}")
         flash('An error occurred during signup. Please try again.', 'error')
         return redirect(url_for('auth.signup_page'))
 
@@ -167,7 +170,7 @@ def login():
         return response
 
     except Exception as e:
-        print(f"Login error: {e}")
+        logger.error(f"Login error: {e}")
         flash('An error occurred during login. Please try again.', 'error')
         return redirect(url_for('auth.login_page'))
 
@@ -214,7 +217,7 @@ def forgot_password():
         return redirect(url_for('auth.login_page'))
 
     except Exception as e:
-        print(f"Forgot password error: {e}")
+        logger.error(f"Forgot password error: {e}")
         flash('An error occurred. Please try again.', 'error')
         return redirect(url_for('auth.forgot_password_page'))
 
@@ -264,7 +267,7 @@ def reset_password(token):
         return redirect(url_for('auth.login_page'))
 
     except Exception as e:
-        print(f"Reset password error: {e}")
+        logger.error(f"Reset password error: {e}")
         flash('An error occurred. Please try again.', 'error')
         return redirect(url_for('auth.reset_password_page', token=token))
 
