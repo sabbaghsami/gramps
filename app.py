@@ -1,23 +1,23 @@
 """
 Grandad Reminders - A simple reminder display system.
-Phase 1: Per-user boards backed by PostgreSQL sessions/user identity.
 """
 from flask import Flask, jsonify, request, render_template
 import random
 import string
-import traceback
+import logging
 from datetime import datetime, timedelta, timezone
 from openai import OpenAI
-from psycopg import connect
-from psycopg.rows import dict_row
 
 from config import Config
 from database import get_database
 from models import Message
 from auth.routes import auth_bp
+from auth.database import get_auth_database
 from auth.email_service import EmailService
 from auth.middleware import login_required, get_current_user
 from error_handlers import register_error_handlers
+
+logger = logging.getLogger(__name__)
 
 
 class ReminderApp:
@@ -31,6 +31,7 @@ class ReminderApp:
         )
         self.app.config['SECRET_KEY'] = Config.SECRET_KEY
         self.db = get_database()
+        self.auth_db = get_auth_database()
 
         # Register authentication blueprint
         self.app.register_blueprint(auth_bp)
@@ -79,9 +80,7 @@ class ReminderApp:
     def get_messages(self):
         """GET /api/messages - Retrieve all messages."""
         try:
-            user_id = self._current_user_id()
-            if not user_id:
-                return jsonify({'error': 'Unauthorized'}), 401
+            user_id = get_current_user().id
             ctx = request.args.get('context', 'personal')
             if ctx.startswith('workspace:'):
                 workspace_id = self._parse_workspace_id(ctx)
@@ -92,17 +91,14 @@ class ReminderApp:
                 messages = self.db.get_messages_for_user(user_id)
             return jsonify([msg.to_dict() for msg in messages]), 200
         except Exception as e:
-            print(f"Error in get_messages: {e}")
+            logger.error(f"Error in get_messages: {e}")
             return jsonify({'error': 'Failed to load messages'}), 500
 
     @login_required
     def add_message(self):
         """POST /api/messages - Add a new message."""
         try:
-            user_id = self._current_user_id()
-            if not user_id:
-                return jsonify({'error': 'Unauthorized'}), 401
-
+            user_id = get_current_user().id
             data = request.get_json()
             text = data.get('text', '').strip()
             expiry_duration_minutes = data.get('expiry_duration_minutes')
@@ -134,17 +130,15 @@ class ReminderApp:
             return jsonify(message.to_dict()), 201
 
         except Exception as e:
-            print(f"ERROR in add_message: {e}")
-            traceback.print_exc()
+            logger.error(f"Error in add_message: {e}")
+            logger.exception("Traceback:")
             return jsonify({'error': f'Failed to save message: {str(e)}'}), 500
 
     @login_required
     def delete_message(self, message_id: str):
         """DELETE /api/messages/<id> - Delete a message by ID."""
         try:
-            user_id = self._current_user_id()
-            if not user_id:
-                return jsonify({'error': 'Unauthorized'}), 401
+            user_id = get_current_user().id
             ctx = request.args.get('context', 'personal')
             if ctx.startswith('workspace:'):
                 workspace_id = self._parse_workspace_id(ctx)
@@ -161,21 +155,17 @@ class ReminderApp:
             return jsonify({'success': True}), 200
 
         except Exception as e:
-            print(f"Error in delete_message: {e}")
+            logger.error(f"Error in delete_message: {e}")
             return jsonify({'error': 'Failed to delete message'}), 500
 
     @login_required
     def list_workspaces(self):
-        user_id = self._current_user_id()
-        if not user_id:
-            return jsonify({'error': 'Unauthorized'}), 401
+        user_id = get_current_user().id
         return jsonify(self.db.list_workspaces_for_user(user_id)), 200
 
     @login_required
     def create_workspace(self):
-        user_id = self._current_user_id()
-        if not user_id:
-            return jsonify({'error': 'Unauthorized'}), 401
+        user_id = get_current_user().id
         data = request.get_json() or {}
         name = (data.get('name') or '').strip()
         if not name:
@@ -185,9 +175,7 @@ class ReminderApp:
 
     @login_required
     def rename_workspace(self, workspace_id: int):
-        user_id = self._current_user_id()
-        if not user_id:
-            return jsonify({'error': 'Unauthorized'}), 401
+        user_id = get_current_user().id
         data = request.get_json() or {}
         name = (data.get('name') or '').strip()
         if not name:
@@ -198,18 +186,14 @@ class ReminderApp:
 
     @login_required
     def delete_workspace(self, workspace_id: int):
-        user_id = self._current_user_id()
-        if not user_id:
-            return jsonify({'error': 'Unauthorized'}), 401
+        user_id = get_current_user().id
         if not self.db.delete_workspace(workspace_id, user_id):
             return jsonify({'error': 'Forbidden or not found'}), 403
         return jsonify({'success': True}), 200
 
     @login_required
     def invite_workspace(self, workspace_id: int):
-        user_id = self._current_user_id()
-        if not user_id:
-            return jsonify({'error': 'Unauthorized'}), 401
+        user_id = get_current_user().id
         # Any member can invite (per requirements)
         if not self.db.is_workspace_member(workspace_id, user_id):
             return jsonify({'error': 'Forbidden'}), 403
@@ -218,24 +202,24 @@ class ReminderApp:
         if not email:
             return jsonify({'error': 'Email is required'}), 400
         # Require that the invitee already has an account
-        invitee = self._find_user_by_email(email)
+        invitee = self.auth_db.get_user_by_email(email)
         if not invitee:
             return jsonify({'error': 'No user exists with that email'}), 400
         invite = self.db.create_workspace_invite(workspace_id, user_id, email)
         # Email
         join_url = f"{Config.BASE_URL}/workspaces/join/{invite['token']}"
         ws = self.db.get_workspace(workspace_id)
-        inviter = self._get_user_profile(user_id)
+        inviter = self.auth_db.get_user_by_id(user_id)
         if email:
-            EmailService().send_workspace_invite_email(email, inviter['email'], ws['name'], join_url)
+            EmailService().send_workspace_invite_email(email, inviter.email, ws['name'], join_url)
         return jsonify({'success': True, 'join_url': join_url if not email else None}), 201
 
     def join_workspace(self, token: str):
-        user_id = self._current_user_id()
-        if not user_id:
+        user = get_current_user()
+        if not user:
             # Force login and bounce back
             return self._redirect_to_login_with_next()
-        ws_id = self.db.accept_workspace_invite(token, user_id)
+        ws_id = self.db.accept_workspace_invite(token, user.id)
         if not ws_id:
             return jsonify({'error': 'Invalid or expired invite'}), 400
         # Redirect to admin in that workspace
@@ -286,8 +270,8 @@ class ReminderApp:
             }), 200
 
         except Exception as e:
-            print(f"Error in translate: {e}")
-            traceback.print_exc()
+            logger.error(f"Error in translate: {e}")
+            logger.exception("Traceback:")
 
             # Provide more specific error messages
             error_message = str(e)
@@ -318,58 +302,6 @@ class ReminderApp:
         )
 
     # --- helpers ---
-    @staticmethod
-    def _current_user_id() -> int | None:
-        """Resolve current user id from session_token cookie using DB sessions.
-
-        Returns None if not found or expired. Deletes expired session.
-        """
-        token = request.cookies.get('session_token')
-        if not token or not Config.DATABASE_URL:
-            return None
-        try:
-            with connect(Config.DATABASE_URL, row_factory=dict_row) as conn:
-                with conn.cursor() as cur:
-                    cur.execute(
-                        "SELECT user_id, expires_at FROM sessions WHERE session_token = %s",
-                        (token,),
-                    )
-                    row = cur.fetchone()
-                    if not row:
-                        return None
-                    expires_at = row['expires_at']
-                    now = datetime.now(timezone.utc)
-                    if expires_at and now > expires_at:
-                        # purge expired token
-                        cur.execute("DELETE FROM sessions WHERE session_token = %s", (token,))
-                        conn.commit()
-                        return None
-                    return int(row['user_id'])
-        except Exception:
-            return None
-
-    @staticmethod
-    def _get_user_profile(user_id: int) -> dict | None:
-        try:
-            with connect(Config.DATABASE_URL, row_factory=dict_row) as conn:
-                with conn.cursor() as cur:
-                    cur.execute("SELECT id, email FROM users WHERE id = %s", (user_id,))
-                    row = cur.fetchone()
-                    return dict(row) if row else None
-        except Exception:
-            return None
-
-    @staticmethod
-    def _find_user_by_email(email: str) -> dict | None:
-        try:
-            with connect(Config.DATABASE_URL, row_factory=dict_row) as conn:
-                with conn.cursor() as cur:
-                    cur.execute("SELECT id, email FROM users WHERE lower(email) = lower(%s)", (email,))
-                    row = cur.fetchone()
-                    return dict(row) if row else None
-        except Exception:
-            return None
-
     @staticmethod
     def _redirect_to_login_with_next():
         from flask import redirect, url_for, request
