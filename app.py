@@ -26,6 +26,7 @@ class ReminderApp:
         """Register all Flask routes."""
         self.app.add_url_rule('/', 'index', self.index)
         self.app.add_url_rule('/admin', 'admin', self.admin)
+        self.app.add_url_rule('/black_screen_video.mp4', 'video', self.serve_video)
         self.app.add_url_rule('/api/messages', 'get_messages', self.get_messages, methods=['GET'])
         self.app.add_url_rule('/api/messages', 'add_message', self.add_message, methods=['POST'])
         self.app.add_url_rule('/api/messages/<message_id>', 'delete_message', self.delete_message, methods=['DELETE'])
@@ -45,6 +46,10 @@ class ReminderApp:
     def admin(self):
         """Serve the admin page."""
         return send_from_directory('.', 'admin.html')
+
+    def serve_video(self):
+        """Serve the keep-awake video."""
+        return send_from_directory('.', 'black_screen_video.mp4')
 
     def get_messages(self):
         """GET /api/messages - Retrieve all messages."""

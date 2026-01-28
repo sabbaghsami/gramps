@@ -168,6 +168,57 @@
         
         document.addEventListener('mousemove', showControls);
         showControls();
+
+        // Keep screen awake - multiple approaches
+        let wakeLock = null;
+
+        // 1. Ensure video plays and keeps playing
+        const video = document.getElementById('keepAwake');
+
+        function ensureVideoPlays() {
+            if (video.paused) {
+                video.play().catch(err => {
+                    console.log('Video play failed:', err);
+                });
+            }
+        }
+
+        // Try to play video immediately and check every 2 seconds
+        video.play().catch(err => console.log('Initial video play failed:', err));
+        setInterval(ensureVideoPlays, 2000);
+
+        // 2. Screen Wake Lock API (modern browsers)
+        async function requestWakeLock() {
+            try {
+                if ('wakeLock' in navigator) {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                    console.log('Wake Lock activated');
+
+                    wakeLock.addEventListener('release', () => {
+                        console.log('Wake Lock released');
+                    });
+                }
+            } catch (err) {
+                console.log('Wake Lock failed:', err);
+            }
+        }
+
+        // Request wake lock on page load
+        requestWakeLock();
+
+        // Re-request wake lock when page becomes visible again
+        document.addEventListener('visibilitychange', () => {
+            if (wakeLock !== null && document.visibilityState === 'visible') {
+                requestWakeLock();
+            }
+        });
+
+        // 3. Periodic DOM manipulation to keep page "active"
+        setInterval(() => {
+            document.body.style.transform = 'translateZ(0)';
+        }, 10000);
+
+        console.log('Screen keep-awake mechanisms activated');
     </script>
 </body>
 </html>
