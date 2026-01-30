@@ -131,7 +131,7 @@
         let currentSize = 48;
         
         function changeTextSize(delta) {
-            currentSize = Math.max(24, Math.min(96, currentSize + delta));
+            currentSize = Math.max(24, Math.min(192, currentSize + delta));
             document.documentElement.style.setProperty('--text-size', currentSize + 'px');
             document.getElementById('sizeDisplay').textContent = currentSize + 'px';
             localStorage.setItem('textSize', currentSize);
